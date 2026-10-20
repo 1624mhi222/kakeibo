@@ -120,9 +120,21 @@
     padding: 10px 16px; border-radius: 12px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; }
   .toast.show { opacity: 1; }
   .empty { color: var(--quiet); font-size: 14px; text-align: center; padding: 12px 0; }
-  .heroTop { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-  .budgetBox { text-align: right; min-width: 0; }
+  /* スマホ: 左に今日使える金、右に予算と尽きる予測を縦に。PC: 3つを横に大きく並べる */
+  .heroTop { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "today budget" "today run"; gap: 4px 12px; align-items: start; }
+  .todayBox { grid-area: today; } .budgetBox { grid-area: budget; text-align: right; } .runBox { grid-area: run; text-align: right; }
   .big2 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; margin: 2px 0 4px; font-variant-numeric: tabular-nums; }
+  .big3 { font-size: 22px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .big3.bad, .bmeta.bad { color: var(--bad); }
+  .pcOnly { display: none; } .blk { display: block; }
+  @media (min-width: 760px) {
+    .heroTop { grid-template-columns: 1fr 1fr 1fr; grid-template-areas: "today budget run"; gap: 16px; }
+    .budgetBox, .runBox { text-align: left; border-left: 1px solid var(--line); padding-left: 20px; }
+    .big2, .big3 { font-size: 44px; letter-spacing: -0.02em; line-height: 1.1; margin: 2px 0 6px; }
+    .budgetBox .bmeta, .runBox .bmeta { font-size: 15px; }
+    .bmeta b { font-size: 18px; }
+    .pcOnly, .blk { display: inline; }
+  }
   .bmeta { font-size: 12.5px; color: var(--quiet); line-height: 1.5; white-space: nowrap; }
   .bmeta b { font-size: 15px; color: var(--ink); }
   .bmeta .bad, .bmeta b.bad { color: var(--bad); font-weight: 600; }
@@ -360,14 +372,14 @@ function runOut(sum) {
 function budgetBox(sum) {
   const r = runOut(sum), md = d => Number(d.slice(5, 7)) + '/' + Number(d.slice(8));
   const pct = Math.round(sum.ratio * 100);
-  const msg = r.over ? '<span class="bad">' + md(r.date) + ' に予算オーバー</span>'
-    : r.ok ? '月末までもつペース'
-    : 'このペースだと<br><span class="bad">' + md(r.date) + ' に尽きる</span>';
+  const lvl = pct >= 100 ? 'bad' : pct >= 80 ? 'warnc' : '';
+  const when = r.over ? '<div class="label">予算オーバー</div><div class="big3 bad">' + md(r.date) + '</div><div class="bmeta">に超えました</div>'
+    : r.ok ? '<div class="label">このペースだと</div><div class="big3">月末まで</div><div class="bmeta">もつ見込み</div>'
+    : '<div class="label">このペースだと</div><div class="big3 bad">' + md(r.date) + '</div><div class="bmeta bad">に尽きる</div>';
   return '<div class="budgetBox"><div class="label">今月の予算</div>' +
     '<div class="big2">' + Calc.rm(sum.budget).replace(/\.00$/, '') + '</div>' +
-    '<div class="bmeta"><b class="' + (pct >= 100 ? 'bad' : pct >= 80 ? 'warnc' : '') + '">' + pct + '%</b> 使用</div>' +
-    '<div class="bmeta">残り ' + Calc.rm(Math.max(0, sum.left)) + '</div>' +
-    '<div class="bmeta">' + msg + '</div></div>';
+    '<div class="bmeta"><b class="' + lvl + '">' + pct + '%</b> 使用<span class="pcOnly">・</span><span class="blk">残り ' + Calc.rm(Math.max(0, sum.left)) + '</span></div></div>' +
+    '<div class="runBox">' + when + '</div>';
 }
 
 function renderHero() {
@@ -378,7 +390,7 @@ function renderHero() {
   if (S.settings.tripTag) h += '<div class="label">滞在中: ' + esc(S.settings.tripTag) + '(この間の支出は旅行予算に入ります)</div>';
   if (sum.isCurrent) {
     const food = sum.foodLeft >= 0 ? '今日の食費 あと ' + Calc.rm(sum.foodLeft) : '今日の食費 目安を ' + Calc.rm(-sum.foodLeft) + ' オーバー';
-    h += '<div class="heroTop"><div><div class="label">' + (sum.todayLeft >= 0 ? '今日使える金' : '今日の1日分を超えた額') + '</div>' +
+    h += '<div class="heroTop"><div class="todayBox"><div class="label">' + (sum.todayLeft >= 0 ? '今日使える金' : '今日の1日分を超えた額') + '</div>' +
       '<div class="big ' + (sum.todayLeft < 0 ? 'bad' : '') + '">' + Calc.rm(sum.todayLeft) + '</div>' + (jp(sum.todayLeft) ? '<div class="jpyline">' + jp(sum.todayLeft) + '</div>' : '') +
       '</div>' + budgetBox(sum) + '</div>' +
       '<div class="sub"><span class="pill ' + (sum.foodLeft < 0 ? 'bad' : sum.foodLeft < S.settings.foodDaily * 0.3 ? 'warn' : '') + '">' + food + '</span>' +
