@@ -378,20 +378,13 @@ function runOut(sum) {
   if (day + lastsDays >= dim) return { ok: true, leftAtEnd: Math.round((sum.budget - pace * dim) * 100) / 100 };
   return { date: S.month + '-' + String(day + lastsDays + 1).padStart(2, '0') };
 }
-// 予算に対して使った分を区分の色で塗ったドーナツ。残りはグレー
+// 予算に対して使った割合のドーナツ。使った分は1色(80%でオレンジ、100%で赤)、残りはグレー
 function donut(sum, cls) {
-  const by = {};
-  monthTx().filter(t => Calc.counts(t, S.settings)).forEach(t => { const k = CAT_COLORS[t.category] ? t.category : 'その他'; by[k] = (by[k] || 0) + t.myr; });
-  const scale = Math.max(sum.budget, sum.spent) || 1, R = 15.9155, C = 100; // 円周 100
-  let off = 0, arcs = '';
-  Object.keys(CAT_COLORS).concat(['その他']).filter(k => by[k] > 0).forEach(k => {
-    const len = by[k] / scale * C;
-    arcs += '<circle r="' + R + '" cx="20" cy="20" fill="none" stroke="var(--c-' + (CAT_COLORS[k] || 'other') + ')" stroke-width="6" stroke-dasharray="' + Math.max(0, len - 0.6).toFixed(2) + ' ' + C + '" stroke-dashoffset="' + (-off).toFixed(2) + '"/>';
-    off += len;
-  });
-  const pct = Math.round(sum.ratio * 100);
+  const pct = Math.round(sum.ratio * 100), R = 15.9155; // 円周 100
+  const color = pct >= 100 ? 'var(--bad)' : pct >= 80 ? 'var(--warn)' : 'var(--accent)';
   return '<svg class="donut ' + cls + '" viewBox="0 0 40 40" role="img" aria-label="予算の' + pct + '%を使用"><g transform="rotate(-90 20 20)">' +
-    '<circle r="' + R + '" cx="20" cy="20" fill="none" stroke="var(--chip)" stroke-width="6"/>' + arcs + '</g>' +
+    '<circle r="' + R + '" cx="20" cy="20" fill="none" stroke="var(--chip)" stroke-width="6"/>' +
+    '<circle r="' + R + '" cx="20" cy="20" fill="none" stroke="' + color + '" stroke-width="6" stroke-linecap="' + (pct >= 100 ? 'butt' : 'round') + '" stroke-dasharray="' + Math.min(100, sum.ratio * 100).toFixed(2) + ' 100"/></g>' +
     '<text x="20" y="21" text-anchor="middle" dominant-baseline="middle" class="dpct' + (pct >= 100 ? ' bad' : '') + '">' + pct + '%</text></svg>';
 }
 function budgetBox(sum) {
