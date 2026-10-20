@@ -120,6 +120,14 @@
     padding: 10px 16px; border-radius: 12px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; }
   .toast.show { opacity: 1; }
   .empty { color: var(--quiet); font-size: 14px; text-align: center; padding: 12px 0; }
+  .heroTop { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .budgetBox { text-align: right; min-width: 0; }
+  .big2 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; margin: 2px 0 4px; font-variant-numeric: tabular-nums; }
+  .bmeta { font-size: 12.5px; color: var(--quiet); line-height: 1.5; white-space: nowrap; }
+  .bmeta b { font-size: 15px; color: var(--ink); }
+  .bmeta .bad, .bmeta b.bad { color: var(--bad); font-weight: 600; }
+  .bmeta b.warnc { color: var(--warn); }
+  @media (max-width: 380px) { .big2 { font-size: 24px; } }
   .jpy { color: var(--quiet); opacity: .75; font-size: 12px; font-weight: 400; margin-left: 6px; font-variant-numeric: tabular-nums; letter-spacing: 0; }
   .big + .jpyline { margin: -4px 0 8px; }
   .jpyline .jpy { margin-left: 0; font-size: 13px; }
@@ -329,6 +337,39 @@ function stackBar(sum) {
   return '<div class="stack" role="img" aria-label="区分ごとの支出">' + bar + '</div><div class="legend">' + legend + '</div>';
 }
 
+// 月の予算と、このペースだといつ尽きるか
+function runOut(sum) {
+  const t = today(), day = Number(t.slice(8)), dim = sum.remaining + day - 1;
+  const [y, m] = S.month.split('-').map(Number);
+  if (sum.spent >= sum.budget) {
+    // 予算を超えた日を探す
+    let acc = 0, when = t;
+    for (let d = 1; d <= day; d++) {
+      const key = S.month + '-' + String(d).padStart(2, '0');
+      acc += Calc.sum(monthTx().filter(x => x.date === key && Calc.counts(x, S.settings)));
+      if (acc >= sum.budget) { when = key; break; }
+    }
+    return { over: true, date: when };
+  }
+  const pace = sum.spent / day;
+  if (!(pace > 0)) return { ok: true, leftAtEnd: sum.budget };
+  const lastsDays = Math.floor((sum.budget - sum.spent) / pace);   // 今日のあと何日もつか
+  if (day + lastsDays >= dim) return { ok: true, leftAtEnd: Math.round((sum.budget - pace * dim) * 100) / 100 };
+  return { date: S.month + '-' + String(day + lastsDays + 1).padStart(2, '0') };
+}
+function budgetBox(sum) {
+  const r = runOut(sum), md = d => Number(d.slice(5, 7)) + '/' + Number(d.slice(8));
+  const pct = Math.round(sum.ratio * 100);
+  const msg = r.over ? '<span class="bad">' + md(r.date) + ' に予算オーバー</span>'
+    : r.ok ? '月末までもつペース'
+    : 'このペースだと<br><span class="bad">' + md(r.date) + ' に尽きる</span>';
+  return '<div class="budgetBox"><div class="label">今月の予算</div>' +
+    '<div class="big2">' + Calc.rm(sum.budget).replace(/\.00$/, '') + '</div>' +
+    '<div class="bmeta"><b class="' + (pct >= 100 ? 'bad' : pct >= 80 ? 'warnc' : '') + '">' + pct + '%</b> 使用</div>' +
+    '<div class="bmeta">残り ' + Calc.rm(Math.max(0, sum.left)) + '</div>' +
+    '<div class="bmeta">' + msg + '</div></div>';
+}
+
 function renderHero() {
   const [y, m] = S.month.split('-');
   $('monthTitle').textContent = y + '年' + Number(m) + '月';
@@ -337,8 +378,9 @@ function renderHero() {
   if (S.settings.tripTag) h += '<div class="label">滞在中: ' + esc(S.settings.tripTag) + '(この間の支出は旅行予算に入ります)</div>';
   if (sum.isCurrent) {
     const food = sum.foodLeft >= 0 ? '今日の食費 あと ' + Calc.rm(sum.foodLeft) : '今日の食費 目安を ' + Calc.rm(-sum.foodLeft) + ' オーバー';
-    h += '<div class="label">' + (sum.todayLeft >= 0 ? '今日使える金' : '今日の1日分を超えた額') + '</div>' +
+    h += '<div class="heroTop"><div><div class="label">' + (sum.todayLeft >= 0 ? '今日使える金' : '今日の1日分を超えた額') + '</div>' +
       '<div class="big ' + (sum.todayLeft < 0 ? 'bad' : '') + '">' + Calc.rm(sum.todayLeft) + '</div>' + (jp(sum.todayLeft) ? '<div class="jpyline">' + jp(sum.todayLeft) + '</div>' : '') +
+      '</div>' + budgetBox(sum) + '</div>' +
       '<div class="sub"><span class="pill ' + (sum.foodLeft < 0 ? 'bad' : sum.foodLeft < S.settings.foodDaily * 0.3 ? 'warn' : '') + '">' + food + '</span>' +
       '<span class="pill">1日分 ' + Calc.rm(sum.daily) + '(残り' + sum.remaining + '日)</span></div>';
   } else {
@@ -559,7 +601,11 @@ function renderOutlook() {
   }
   const [, em, ed] = o.end.split('-');
   const val = n => '<b class="' + (n < 0 ? 'bad' : '') + '">' + Calc.rm(n) + '</b>' + jp(n);
-  let h = '<div class="row2"><span>今の残高<small>記録した支出を引いた計算上の額</small></span><span>' + val(o.now) + '</span></div>' +
+  // 残高がいつ尽きるか(今月のペース+家賃が続くとして)
+  const monthly = o.pace * 365 / 12 + o.rent;
+  let dry = '';
+  if (monthly > 0 && o.now > 0) { const d = new Date(); d.setDate(d.getDate() + Math.floor(o.now / monthly * 365 / 12)); dry = 'このペース+家賃だと ' + d.getFullYear() + '年' + (d.getMonth() + 1) + '月ごろ尽きる'; }
+  let h = '<div class="row2"><span>今の残高<small>' + (dry || '記録した支出を引いた計算上の額') + '</small></span><span>' + val(o.now) + '</span></div>' +
     '<h2 style="margin-top:12px">' + Number(em) + '/' + Number(ed) + 'までの見通し</h2><div class="label">あと' + o.daysLeft + '日' + (o.months ? '・これから払う家賃 ' + Calc.rm(o.rent) + '×' + o.months + 'か月を引いたあと' : '') + '</div>' +
     '<div class="row2"><span>今月のペースのまま<small>1日 ' + Calc.rm(o.pace) + '</small></span><span>' + val(o.atPace) + '</span></div>' +
     '<div class="row2"><span>予算どおりなら<small>1日 ' + Calc.rm(o.plan) + '(月 ' + Calc.rm(S.settings.budget) + ')</small></span><span>' + val(o.atPlan) + '</span></div>';
