@@ -40,9 +40,10 @@
   .bar { height: 8px; background: var(--chip); border-radius: 99px; overflow: hidden; margin: 14px 0 6px; }
   .bar > div { height: 100%; background: var(--accent); border-radius: 99px; }
   .bar.warn > div { background: var(--warn); } .bar.bad > div { background: var(--bad); }
-  .stack { position: relative; display: flex; gap: 2px; height: 12px; background: var(--chip); border-radius: 99px; overflow: hidden; margin: 14px 0 8px; }
+  .stack { position: relative; display: flex; gap: 2px; height: 22px; background: var(--chip); border-radius: 8px; overflow: hidden; margin: 14px 0 10px; }
   .stack > span { height: 100%; min-width: 2px; }
-  .stack > span:last-of-type { border-radius: 0 4px 4px 0; }
+  .stack > span:last-of-type { border-radius: 0 6px 6px 0; }
+  @media (min-width: 760px) { .stack { height: 28px; } .legend { font-size: 13px; } }
   .stack > i { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--quiet); margin-bottom: 6px; }
   .legend b { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -121,12 +122,17 @@
   .toast.show { opacity: 1; }
   .empty { color: var(--quiet); font-size: 14px; text-align: center; padding: 12px 0; }
   /* スマホ: 左に今日使える金、右に予算と尽きる予測を縦に。PC: 3つを横に大きく並べる */
-  .heroTop { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "today budget" "today run"; gap: 4px 12px; align-items: start; }
-  .todayBox { grid-area: today; } .budgetBox { grid-area: budget; text-align: right; } .runBox { grid-area: run; text-align: right; }
+  .heroTop { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "today today" "budget run"; gap: 8px 12px; align-items: center; margin-bottom: 12px; }
+  .todayBox { grid-area: today; } .budgetBox { grid-area: budget; } .runBox { grid-area: run; text-align: right; }
   .big2 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; margin: 2px 0 4px; font-variant-numeric: tabular-nums; }
   .big3 { font-size: 22px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
   .big3.bad, .bmeta.bad { color: var(--bad); }
   .pcOnly { display: none; } .blk { display: block; }
+  .budgetBox { display: flex; gap: 10px; align-items: center; }
+  .donut { width: 58px; height: 58px; flex: none; }
+
+  .donut .dpct { font-size: 8.5px; font-weight: 700; fill: var(--ink); font-variant-numeric: tabular-nums; }
+  .donut .dpct.bad { fill: var(--bad); }
   @media (min-width: 760px) {
     .heroTop { grid-template-columns: 1fr 1fr 1fr; grid-template-areas: "today budget run"; gap: 16px; }
     .budgetBox, .runBox { text-align: left; border-left: 1px solid var(--line); padding-left: 20px; }
@@ -134,6 +140,9 @@
     .budgetBox .bmeta, .runBox .bmeta { font-size: 15px; }
     .bmeta b { font-size: 18px; }
     .pcOnly, .blk { display: inline; }
+    .budgetBox { justify-content: flex-start; gap: 16px; }
+    .donut { width: 112px; height: 112px; }
+    .heroTop { align-items: start; }
   }
   .bmeta { font-size: 12.5px; color: var(--quiet); line-height: 1.5; white-space: nowrap; }
   .bmeta b { font-size: 15px; color: var(--ink); }
@@ -369,6 +378,22 @@ function runOut(sum) {
   if (day + lastsDays >= dim) return { ok: true, leftAtEnd: Math.round((sum.budget - pace * dim) * 100) / 100 };
   return { date: S.month + '-' + String(day + lastsDays + 1).padStart(2, '0') };
 }
+// 予算に対して使った分を区分の色で塗ったドーナツ。残りはグレー
+function donut(sum, cls) {
+  const by = {};
+  monthTx().filter(t => Calc.counts(t, S.settings)).forEach(t => { const k = CAT_COLORS[t.category] ? t.category : 'その他'; by[k] = (by[k] || 0) + t.myr; });
+  const scale = Math.max(sum.budget, sum.spent) || 1, R = 15.9155, C = 100; // 円周 100
+  let off = 0, arcs = '';
+  Object.keys(CAT_COLORS).concat(['その他']).filter(k => by[k] > 0).forEach(k => {
+    const len = by[k] / scale * C;
+    arcs += '<circle r="' + R + '" cx="20" cy="20" fill="none" stroke="var(--c-' + (CAT_COLORS[k] || 'other') + ')" stroke-width="6" stroke-dasharray="' + Math.max(0, len - 0.6).toFixed(2) + ' ' + C + '" stroke-dashoffset="' + (-off).toFixed(2) + '"/>';
+    off += len;
+  });
+  const pct = Math.round(sum.ratio * 100);
+  return '<svg class="donut ' + cls + '" viewBox="0 0 40 40" role="img" aria-label="予算の' + pct + '%を使用"><g transform="rotate(-90 20 20)">' +
+    '<circle r="' + R + '" cx="20" cy="20" fill="none" stroke="var(--chip)" stroke-width="6"/>' + arcs + '</g>' +
+    '<text x="20" y="21" text-anchor="middle" dominant-baseline="middle" class="dpct' + (pct >= 100 ? ' bad' : '') + '">' + pct + '%</text></svg>';
+}
 function budgetBox(sum) {
   const r = runOut(sum), md = d => Number(d.slice(5, 7)) + '/' + Number(d.slice(8));
   const pct = Math.round(sum.ratio * 100);
@@ -376,9 +401,9 @@ function budgetBox(sum) {
   const when = r.over ? '<div class="label">予算オーバー</div><div class="big3 bad">' + md(r.date) + '</div><div class="bmeta">に超えました</div>'
     : r.ok ? '<div class="label">このペースだと</div><div class="big3">月末まで</div><div class="bmeta">もつ見込み</div>'
     : '<div class="label">このペースだと</div><div class="big3 bad">' + md(r.date) + '</div><div class="bmeta bad">に尽きる</div>';
-  return '<div class="budgetBox"><div class="label">今月の予算</div>' +
+  return '<div class="budgetBox">' + donut(sum, 'all') + '<div><div class="label">今月の予算</div>' +
     '<div class="big2">' + Calc.rm(sum.budget).replace(/\.00$/, '') + '</div>' +
-    '<div class="bmeta"><b class="' + lvl + '">' + pct + '%</b> 使用<span class="pcOnly">・</span><span class="blk">残り ' + Calc.rm(Math.max(0, sum.left)) + '</span></div></div>' +
+    '<div class="bmeta"><b class="' + lvl + '">' + pct + '%</b> 使用<span class="pcOnly">・</span><span class="blk">残り ' + Calc.rm(Math.max(0, sum.left)) + '</span></div></div></div>' +
     '<div class="runBox">' + when + '</div>';
 }
 
