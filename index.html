@@ -128,6 +128,9 @@
   .big3 { font-size: 22px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
   .big3.bad, .bmeta.bad { color: var(--bad); }
   .pcOnly { display: none; } .blk { display: block; }
+  .pavg { font-size: 12px; opacity: .8; margin-left: 4px; }
+  .bavg .jpy { display: none; }
+  @media (min-width: 760px) { .bavg .jpy { display: inline; } }
   .budgetBox { display: flex; gap: 10px; align-items: center; }
   .donut { width: 58px; height: 58px; flex: none; }
 
@@ -370,13 +373,13 @@ function runOut(sum) {
       acc += Calc.sum(monthTx().filter(x => x.date === key && Calc.counts(x, S.settings)));
       if (acc >= sum.budget) { when = key; break; }
     }
-    return { over: true, date: when };
+    return { over: true, date: when, avg: Math.round(sum.spent / day * 100) / 100 };
   }
-  const pace = sum.spent / day;
+  const pace = sum.spent / day, avg = Math.round(pace * 100) / 100;
   if (!(pace > 0)) return { ok: true, leftAtEnd: sum.budget };
   const lastsDays = Math.floor((sum.budget - sum.spent) / pace);   // 今日のあと何日もつか
-  if (day + lastsDays >= dim) return { ok: true, leftAtEnd: Math.round((sum.budget - pace * dim) * 100) / 100 };
-  return { date: S.month + '-' + String(day + lastsDays + 1).padStart(2, '0') };
+  if (day + lastsDays >= dim) return { ok: true, avg, leftAtEnd: Math.round((sum.budget - pace * dim) * 100) / 100 };
+  return { avg, date: S.month + '-' + String(day + lastsDays + 1).padStart(2, '0') };
 }
 // 予算に対して使った割合のドーナツ。使った分は1色(80%でオレンジ、100%で赤)、残りはグレー
 function donut(sum, cls) {
@@ -397,7 +400,7 @@ function budgetBox(sum) {
   return '<div class="budgetBox">' + donut(sum, 'all') + '<div><div class="label">今月の予算</div>' +
     '<div class="big2">' + Calc.rm(sum.budget).replace(/\.00$/, '') + '</div>' +
     '<div class="bmeta"><b class="' + lvl + '">' + pct + '%</b> 使用<span class="pcOnly">・</span><span class="blk">残り ' + Calc.rm(Math.max(0, sum.left)) + '</span></div></div></div>' +
-    '<div class="runBox">' + when + '</div>';
+    '<div class="runBox">' + when + (r.avg ? '<div class="bmeta bavg">1日平均 ' + Calc.rm(r.avg) + jp(r.avg) + '</div>' : '') + '</div>';
 }
 
 function renderHero() {
@@ -407,7 +410,9 @@ function renderHero() {
   let h = '';
   if (S.settings.tripTag) h += '<div class="label">滞在中: ' + esc(S.settings.tripTag) + '(この間の支出は旅行予算に入ります)</div>';
   if (sum.isCurrent) {
-    const food = sum.foodLeft >= 0 ? '今日の食費 あと ' + Calc.rm(sum.foodLeft) : '今日の食費 目安を ' + Calc.rm(-sum.foodLeft) + ' オーバー';
+    const foodAvg = Math.round(Calc.sum(monthTx().filter(t => t.category === '食費' && typeof t.myr === 'number' && t.date <= today())) / Number(today().slice(8)) * 100) / 100;
+    const food = (sum.foodLeft >= 0 ? '今日の食費 あと ' + Calc.rm(sum.foodLeft) : '今日の食費 目安を ' + Calc.rm(-sum.foodLeft) + ' オーバー') +
+      '<span class="pavg">(1日平均 ' + Calc.rm(foodAvg) + ')</span>';
     h += '<div class="heroTop"><div class="todayBox"><div class="label">' + (sum.todayLeft >= 0 ? '今日使える金' : '今日の1日分を超えた額') + '</div>' +
       '<div class="big ' + (sum.todayLeft < 0 ? 'bad' : '') + '">' + Calc.rm(sum.todayLeft) + '</div>' + (jp(sum.todayLeft) ? '<div class="jpyline">' + jp(sum.todayLeft) + '</div>' : '') +
       '</div>' + budgetBox(sum) + '</div>' +
