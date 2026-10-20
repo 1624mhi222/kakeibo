@@ -602,7 +602,7 @@ function showConnect(msg) {
     try { await callApi(c, 'getData', [S.month]); }
     catch (e) {
       $('cGo').disabled = false;
-      $('cErr').textContent = e.server || e.message.startsWith('URL') ? e.message : 'つながりませんでした。電波とURLを確認してください';
+      $('cErr').textContent = e.server || e.message.startsWith('URL') ? e.message : (navigator.onLine === false ? '電波がありません。つながる場所でもう一度押してください' : 'つながりませんでした。Apps Scriptの「デプロイを管理」で、アクセスできるユーザーが「全員」になっているか確認してください');
       return;
     }
     API.set(c); box.remove(); load();
