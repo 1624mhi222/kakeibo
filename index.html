@@ -118,6 +118,18 @@
     padding: 10px 16px; border-radius: 12px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; }
   .toast.show { opacity: 1; }
   .empty { color: var(--quiet); font-size: 14px; text-align: center; padding: 12px 0; }
+  .jpy { color: var(--quiet); opacity: .75; font-size: 12px; font-weight: 400; margin-left: 6px; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+  .big + .jpyline { margin: -4px 0 8px; }
+  .jpyline .jpy { margin-left: 0; font-size: 13px; }
+  .item .amt .jpy { display: block; margin-left: 0; font-size: 11px; }
+  .outlook h2 { font-size: 15px; margin: 0 0 2px; }
+  .outlook .row2 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .outlook .row2:first-of-type { border-top: 0; }
+  .outlook .row2 b { font-size: 18px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .outlook .row2 b.bad { color: var(--bad); }
+  .outlook .row2 small { display: block; color: var(--quiet); font-size: 12px; }
+  .outlook .note { font-size: 13px; color: var(--quiet); line-height: 1.6; margin-top: 6px; }
+  .outlook .trip { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 0; }
   .connect { position: fixed; inset: 0; background: var(--bg); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; }
   .connect .card { max-width: 460px; width: 100%; }
   .connect h2 { margin: 0 0 8px; font-size: 18px; }
@@ -164,6 +176,7 @@
 
   <section class="card" id="calendar"></section>
   </div>
+  <section class="card outlook" id="outlook" hidden></section>
   <section class="card" id="list"></section>
   <div class="pad" id="pad" hidden>
     <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button><button data-k="/" class="op">÷</button><button data-k="ac" class="fn">AC</button>
@@ -258,7 +271,7 @@ const S = {
   month: today().slice(0, 7),
   settings: store.get('kb-settings', { budget: 1250, foodDaily: 20, wishLine: 50, stayCurrency: 'MYR', tripTag: '',
     categories: ['食費', '交通費', '日用品', '交際費', '美容', '通信費', '趣味・娯楽', '健康・医療', 'その他'], excluded: ['家賃', '固定費'] }),
-  tx: [], queue: store.get('kb-queue', []), loading: true, offline: false,
+  tx: [], queue: store.get('kb-queue', []), loading: true, offline: false, spentSince: store.get('kb-since', null),
   form: { category: '食費', howEat: '', want: false }, selDay: null,
 };
 const EATS = ['自炊', '外食', 'デリバリー', 'カフェ・おやつ'];
@@ -266,6 +279,28 @@ const WANT_EATS = ['デリバリー', 'カフェ・おやつ'];
 const CURRENCIES = ['MYR', 'JPY', 'SGD', 'THB', 'BDT', 'USD', 'その他'];
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+// ---- 日本円の目安(小さく薄く横に出す) ----
+// レートは公開の為替API(1日2回まで取り直す)。取れないときは円で記録した明細のレートを使う
+const FX = { jpy: (store.get('kb-jpy', null) || {}).rate || null };
+async function refreshJpy() {
+  const c = store.get('kb-jpy', null);
+  if (c && Date.now() - c.t < 12 * 3600 * 1000) return;
+  const srcs = [['https://api.frankfurter.app/latest?from=MYR&to=JPY', j => j.rates.JPY],
+    ['https://open.er-api.com/v6/latest/MYR', j => j.rates.JPY]];
+  for (const [u, pick] of srcs) {
+    try {
+      const r = pick(await (await fetch(u)).json());
+      if (r > 0) { FX.jpy = r; store.set('kb-jpy', { rate: r, t: Date.now() }); render(); return; }
+    } catch (e) {}
+  }
+}
+function jpyRate() {
+  if (FX.jpy) return FX.jpy;
+  const t = S.tx.find(x => x.currency === 'JPY' && x.myr > 0);
+  return t ? t.amount / t.myr : null;
+}
+const jp = myr => { const r = jpyRate(); return r && typeof myr === 'number' ? '<span class="jpy">≈¥' + Math.round(Math.abs(myr) * r).toLocaleString('en-US') + '</span>' : ''; };
 
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 2600); }
 
@@ -301,15 +336,15 @@ function renderHero() {
   if (sum.isCurrent) {
     const food = sum.foodLeft >= 0 ? '今日の食費 あと ' + Calc.rm(sum.foodLeft) : '今日の食費 目安を ' + Calc.rm(-sum.foodLeft) + ' オーバー';
     h += '<div class="label">' + (sum.todayLeft >= 0 ? '今日使える金' : '今日の1日分を超えた額') + '</div>' +
-      '<div class="big ' + (sum.todayLeft < 0 ? 'bad' : '') + '">' + Calc.rm(sum.todayLeft) + '</div>' +
+      '<div class="big ' + (sum.todayLeft < 0 ? 'bad' : '') + '">' + Calc.rm(sum.todayLeft) + '</div>' + (jp(sum.todayLeft) ? '<div class="jpyline">' + jp(sum.todayLeft) + '</div>' : '') +
       '<div class="sub"><span class="pill ' + (sum.foodLeft < 0 ? 'bad' : sum.foodLeft < S.settings.foodDaily * 0.3 ? 'warn' : '') + '">' + food + '</span>' +
       '<span class="pill">1日分 ' + Calc.rm(sum.daily) + '(残り' + sum.remaining + '日)</span></div>';
   } else {
     h += '<div class="label">' + (sum.left >= 0 ? 'この月の残り' : 'この月の予算オーバー') + '</div>' +
-      '<div class="big ' + (sum.left < 0 ? 'bad' : '') + '">' + Calc.rm(sum.left) + '</div>';
+      '<div class="big ' + (sum.left < 0 ? 'bad' : '') + '">' + Calc.rm(sum.left) + '</div>' + (jp(sum.left) ? '<div class="jpyline">' + jp(sum.left) + '</div>' : '');
   }
   h += stackBar(sum) +
-    '<div class="label">使った ' + Calc.rm(sum.spent) + ' / 予算 ' + Calc.rm(sum.budget) + '(' + Math.round(sum.ratio * 100) + '%)</div>';
+    '<div class="label">使った ' + Calc.rm(sum.spent) + jp(sum.spent) + ' / 予算 ' + Calc.rm(sum.budget) + '(' + Math.round(sum.ratio * 100) + '%)</div>';
   $('hero').innerHTML = h;
   return sum;
 }
@@ -435,7 +470,7 @@ function renderCalendar() {
     const cls = [(inBudget[key] || 0) > line ? 'over' : '', key === td ? 'today' : '', key === S.selDay ? 'sel' : ''].filter(Boolean).join(' ');
     h += '<button type="button" data-day="' + key + '" class="' + cls + '"' + (v ? ' title="' + Calc.rm(v) + '"' : '') + '><span class="d">' + d + '</span><span class="v">' + (v ? v.toFixed(2) : '') + '</span></button>';
   }
-  h += '</div><div class="calfoot"><span>この月の支出合計 <b>' + Calc.rm(Calc.sum(tx)) + '</b></span><span style="white-space:nowrap">赤 = ' + Calc.rm(Math.round(line * 100) / 100) + '超えの日</span></div>';
+  h += '</div><div class="calfoot"><span>この月の支出合計 <b>' + Calc.rm(Calc.sum(tx)) + '</b>' + jp(Calc.sum(tx)) + '</span><span style="white-space:nowrap">赤 = ' + Calc.rm(Math.round(line * 100) / 100) + '超えの日</span></div>';
   $('calendar').innerHTML = h;
 }
 
@@ -460,7 +495,7 @@ function renderList() {
       const pending = S.queue.some(q => q.id === t.id);
       const sub = [t.category, t.howEat].filter(Boolean).join('・') + (t.trip ? ' ・' + t.trip : '');
       const orig = t.currency && t.currency !== 'MYR' ? '<small>' + esc(t.currency) + ' ' + Number(t.amount).toLocaleString() + '</small>' : '';
-      const myr = typeof t.myr === 'number' ? Calc.rm(t.myr) : '換算待ち';
+      const myr = typeof t.myr === 'number' ? Calc.rm(t.myr) + (t.currency === 'JPY' ? '' : jp(t.myr)) : '換算待ち';
       h += '<div class="item"><div class="what">' + esc(t.note || t.category) + (t.want ? '<span class="tag">欲しい</span>' : '') +
         '<small>' + esc(sub) + (pending ? ' ・未送信' : '') + '</small></div>' +
         '<div class="amt">' + myr + orig + '</div>' +
@@ -476,7 +511,58 @@ function renderStatus() {
     : q ? '送信中… ' + q + '件' : '';
 }
 
-function render() { renderHero(); renderForm(); renderCalendar(); renderList(); renderStatus(); }
+// ---- 年末までの見通し: このペースで使うと、旅行や貯金にいくら回せるか ----
+const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+function outlook() {
+  const raw = S.settings.raw;
+  if (!raw) return null;
+  const bal = Number(raw['残高(MYR)']), since = String(raw['残高の日付'] || '');
+  if (!(bal > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(since)) return { need: true };
+  const end = /^\d{4}-\d{2}-\d{2}$/.test(String(raw['見通しの期日'])) ? String(raw['見通しの期日']) : today().slice(0, 4) + '-12-31';
+  const rent = Number(raw['家賃(MYR/月)']) || 0;
+  // 家賃: 残高の日付の翌月から期日の月まで
+  let months = 0;
+  for (let m = Calc.shift(since.slice(0, 7), 1); m <= end.slice(0, 7); m = Calc.shift(m, 1)) months++;
+  // 残高の日付より後の支出(サーバーの集計 + まだ送っていない分)
+  const unsent = S.queue.filter(q => q.date > since && q.category !== '家賃').reduce((a, q) => a + (q.myr || 0), 0);
+  const spent = (S.spentSince || 0) + unsent;
+  const t = today();
+  const daysLeft = Math.max(0, daysBetween(t, end));           // 明日から期日まで
+  const cur = Calc.summary(S.month === t.slice(0, 7) ? monthTx() : [], cfg(), t.slice(0, 7), t);
+  const dayNo = Number(t.slice(8));
+  const pace = Math.round(cur.spent / dayNo * 100) / 100;       // 今月の1日あたり(予算に入る支出だけ)
+  const plan = Math.round(S.settings.budget * 12 / 365 * 100) / 100; // 通常の月予算どおりの1日分
+  const base = bal - spent - rent * months;
+  const r2 = n => Math.round(n * 100) / 100;
+  const trips = String(raw['旅行の予算'] || '').split(',').map(x => x.trim().match(/^(.+?)\s*=\s*([\d.]+)$/)).filter(Boolean).map(m => ({ name: m[1], amt: Number(m[2]) }));
+  return { end, daysLeft, months, rent, pace, plan, atPace: r2(base - pace * daysLeft), atPlan: r2(base - plan * daysLeft), trips, tripSum: r2(trips.reduce((a, x) => a + x.amt, 0)) };
+}
+function renderOutlook() {
+  const box = $('outlook');
+  const o = S.month === today().slice(0, 7) ? outlook() : null;
+  box.hidden = !o;
+  if (!o) return;
+  if (o.need) {
+    box.innerHTML = '<h2>年末までの見通し</h2><div class="note">設定シートに「残高(MYR)」と「残高の日付」を入れると、このペースで使ったときに旅行や貯金へいくら回せるかをここに出します。</div>';
+    return;
+  }
+  const [, em, ed] = o.end.split('-');
+  const val = n => '<b class="' + (n < 0 ? 'bad' : '') + '">' + Calc.rm(n) + '</b>' + jp(n);
+  let h = '<h2>' + Number(em) + '/' + Number(ed) + 'までの見通し</h2><div class="label">あと' + o.daysLeft + '日' + (o.months ? '・家賃 ' + Calc.rm(o.rent) + '×' + o.months + 'か月を引いたあと' : '') + '</div>' +
+    '<div class="row2"><span>今月のペースのまま<small>1日 ' + Calc.rm(o.pace) + '</small></span><span>' + val(o.atPace) + '</span></div>' +
+    '<div class="row2"><span>予算どおりなら<small>1日 ' + Calc.rm(o.plan) + '(月 ' + Calc.rm(S.settings.budget) + ')</small></span><span>' + val(o.atPlan) + '</span></div>';
+  const diff = Math.round((o.atPlan - o.atPace) * 100) / 100;
+  if (diff > 0) h += '<div class="note">予算どおりにすると、旅行に <b>' + Calc.rm(diff) + '</b>' + jp(diff) + ' 多く回せます。</div>';
+  if (o.trips.length) {
+    h += '<div class="note" style="margin-top:10px">旅行の予算</div>' + o.trips.map(x => '<div class="trip"><span>' + esc(x.name) + '</span><span>' + Calc.rm(x.amt) + jp(x.amt) + '</span></div>').join('') +
+      '<div class="row2"><span>旅行のあと残る<small>今月のペースのまま</small></span><span>' + val(Math.round((o.atPace - o.tripSum) * 100) / 100) + '</span></div>';
+  } else {
+    h += '<div class="note">日本・キロロ・バングラデシュの費用が決まったら、設定シートの「旅行の予算」に バングラデシュ=1500, 日本=3000 のように入れると、ここで引き算します。</div>';
+  }
+  box.innerHTML = h;
+}
+
+function render() { renderHero(); renderForm(); renderCalendar(); renderOutlook(); renderList(); renderStatus(); }
 
 // ---- 読み込みと送信 ----
 async function load() {
@@ -488,6 +574,7 @@ async function load() {
     const res = await call('getData', S.month);
     if (res.month !== S.month) return;
     S.settings = res.settings; S.tx = res.tx; S.loading = false; S.offline = false;
+    if (typeof res.spentSince === 'number') { S.spentSince = res.spentSince; store.set('kb-since', res.spentSince); }
     store.set('kb-settings', res.settings);
     store.set('kb-month-' + S.month, { tx: res.tx });
     const cur = $('currency'); if (cur.options.length && isNaN(amountValue())) cur.value = CURRENCIES.includes(res.settings.stayCurrency) ? res.settings.stayCurrency : 'MYR';
@@ -621,6 +708,7 @@ function startApp() {
     if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   }
   load();
+  refreshJpy();
 }
 startApp();
 </script>
