@@ -507,7 +507,7 @@ function renderList() {
 
 function renderStatus() {
   const q = S.queue.length;
-  $('status').textContent = S.offline ? 'オフラインです。記録は端末に保存し、つながったら送ります' + (q ? '(未送信 ' + q + '件)' : '')
+  $('status').textContent = S.offline ? (S.lastError && navigator.onLine !== false ? S.lastError + '。' : 'オフラインです。') + '記録は端末に保存し、つながったら送ります' + (q ? '(未送信 ' + q + '件)' : '')
     : q ? '送信中… ' + q + '件' : '';
 }
 
@@ -583,15 +583,18 @@ async function load() {
   try {
     const res = await call('getData', S.month);
     if (res.month !== S.month) return;
-    S.settings = res.settings; S.tx = res.tx; S.loading = false; S.offline = false;
+    S.settings = res.settings; S.tx = res.tx; S.loading = false; S.offline = false; S.lastError = '';
+    store.set('kb-ok', true);
     if (typeof res.spentSince === 'number') { S.spentSince = res.spentSince; store.set('kb-since', res.spentSince); }
     if (res.rentMonths) { S.rentMonths = res.rentMonths; store.set('kb-rent', res.rentMonths); }
     store.set('kb-settings', res.settings);
     store.set('kb-month-' + S.month, { tx: res.tx });
     const cur = $('currency'); if (cur.options.length && isNaN(amountValue())) cur.value = CURRENCIES.includes(res.settings.stayCurrency) ? res.settings.stayCurrency : 'MYR';
   } catch (e) {
-    S.offline = true; S.loading = false;
-    if (e && e.server && /合言葉/.test(e.message) && !$('connect')) showConnect(e.message);
+    S.offline = true; S.loading = false; S.lastError = errMsg(e);
+    // この端末でまだ一度もつながっていない、または合言葉違いなら、接続画面に戻して理由を出す
+    const api = !window.mockApi && !API.inGas();
+    if (api && !$('connect') && ((e && e.server && /合言葉/.test(e.message)) || (!store.get('kb-ok', false) && navigator.onLine !== false))) showConnect(S.lastError);
   }
   render();
   flush();
@@ -681,6 +684,14 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) load
   }
 })();
 
+// つながらなかった理由を、mioさんが直せる言葉にする
+function errMsg(e) {
+  const m = String(e && e.message || e);
+  if (e && (e.server || m.startsWith('URL'))) return m;
+  if (navigator.onLine === false) return '電波がありません。つながる場所でもう一度押してください';
+  return 'つながりませんでした。URLが「アクセスできるユーザー: 全員」のデプロイのものか確認してください(デプロイを管理で一番上のURL)';
+}
+
 function showConnect(msg) {
   const conf = API.get() || {};
   const box = document.createElement('div');
@@ -701,10 +712,10 @@ function showConnect(msg) {
     try { await callApi(c, 'getData', [S.month]); }
     catch (e) {
       $('cGo').disabled = false;
-      $('cErr').textContent = e.server || e.message.startsWith('URL') ? e.message : (navigator.onLine === false ? '電波がありません。つながる場所でもう一度押してください' : 'つながりませんでした。Apps Scriptの「デプロイを管理」で、アクセスできるユーザーが「全員」になっているか確認してください');
+      $('cErr').textContent = errMsg(e);
       return;
     }
-    API.set(c); box.remove(); load();
+    API.set(c); store.set('kb-ok', true); box.remove(); load();
   });
 }
 
