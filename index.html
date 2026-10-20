@@ -271,7 +271,7 @@ const S = {
   month: today().slice(0, 7),
   settings: store.get('kb-settings', { budget: 1250, foodDaily: 20, wishLine: 50, stayCurrency: 'MYR', tripTag: '',
     categories: ['食費', '交通費', '日用品', '交際費', '美容', '通信費', '趣味・娯楽', '健康・医療', 'その他'], excluded: ['家賃', '固定費'] }),
-  tx: [], queue: store.get('kb-queue', []), loading: true, offline: false, spentSince: store.get('kb-since', null),
+  tx: [], queue: store.get('kb-queue', []), loading: true, offline: false, spentSince: store.get('kb-since', null), rentMonths: store.get('kb-rent', []),
   form: { category: '食費', howEat: '', want: false }, selDay: null,
 };
 const EATS = ['自炊', '外食', 'デリバリー', 'カフェ・おやつ'];
@@ -408,7 +408,7 @@ function renderForm() {
     CURRENCIES.forEach(c => cur.add(new Option(c, c)));
     cur.value = CURRENCIES.includes(s.stayCurrency) ? s.stayCurrency : 'MYR';
   }
-  $('cats').innerHTML = s.categories.map(c => '<button type="button" class="chip' + (c === f.category ? ' on' : '') + '" data-cat="' + esc(c) + '">' + esc(c) + '</button>').join('');
+  $('cats').innerHTML = s.categories.concat((s.excluded || []).filter(c => !s.categories.includes(c))).map(c => '<button type="button" class="chip' + (c === f.category ? ' on' : '') + '" data-cat="' + esc(c) + '">' + esc(c) + '</button>').join('');
   $('eats').hidden = f.category !== '食費';
   $('eats').innerHTML = EATS.map(e => '<button type="button" class="chip' + (e === f.howEat ? ' on' : '') + '" data-eat="' + e + '">' + e + '</button>').join('');
   $('need').classList.toggle('on', !f.want);
@@ -513,6 +513,13 @@ function renderStatus() {
 
 // ---- 年末までの見通し: このペースで使うと、旅行や貯金にいくら回せるか ----
 const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+// 送った・消した記録を、次に読み込むまでの間も残高に反映する
+function sinceAdjust(t, sign) {
+  const since = String((S.settings.raw || {})['残高の日付'] || '');
+  if (!since || !(t.date > since) || typeof S.spentSince !== 'number') return;
+  S.spentSince = Math.round((S.spentSince + sign * (t.myr || 0)) * 100) / 100; store.set('kb-since', S.spentSince);
+  if (t.category === '家賃' && sign > 0 && !S.rentMonths.includes(t.date.slice(0, 7))) { S.rentMonths.push(t.date.slice(0, 7)); store.set('kb-rent', S.rentMonths); }
+}
 function outlook() {
   const raw = S.settings.raw;
   if (!raw) return null;
@@ -520,22 +527,24 @@ function outlook() {
   if (!(bal > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(since)) return { need: true };
   const end = /^\d{4}-\d{2}-\d{2}$/.test(String(raw['見通しの期日'])) ? String(raw['見通しの期日']) : today().slice(0, 4) + '-12-31';
   const rent = Number(raw['家賃(MYR/月)']) || 0;
-  // 家賃: 残高の日付の翌月から期日の月まで
+  // 今の残高 = 残高 − 残高の日付より後の支出すべて(サーバーの集計 + まだ送っていない分)
+  const unsent = S.queue.filter(q => q.date > since && !S.tx.some(t => t.id === q.id)).reduce((a, q) => a + (q.myr || 0), 0);
+  const now = Math.round((bal - (S.spentSince || 0) - unsent) * 100) / 100;
+  // これから払う家賃: 残高の日付の翌月から期日の月までで、「家賃」をまだ記録していない月
+  const paid = new Set(S.rentMonths || []);
+  S.queue.filter(q => q.category === '家賃' && q.date > since).forEach(q => paid.add(q.date.slice(0, 7)));
   let months = 0;
-  for (let m = Calc.shift(since.slice(0, 7), 1); m <= end.slice(0, 7); m = Calc.shift(m, 1)) months++;
-  // 残高の日付より後の支出(サーバーの集計 + まだ送っていない分)
-  const unsent = S.queue.filter(q => q.date > since && q.category !== '家賃').reduce((a, q) => a + (q.myr || 0), 0);
-  const spent = (S.spentSince || 0) + unsent;
+  for (let m = Calc.shift(since.slice(0, 7), 1); m <= end.slice(0, 7); m = Calc.shift(m, 1)) if (!paid.has(m)) months++;
   const t = today();
   const daysLeft = Math.max(0, daysBetween(t, end));           // 明日から期日まで
   const cur = Calc.summary(S.month === t.slice(0, 7) ? monthTx() : [], cfg(), t.slice(0, 7), t);
   const dayNo = Number(t.slice(8));
   const pace = Math.round(cur.spent / dayNo * 100) / 100;       // 今月の1日あたり(予算に入る支出だけ)
   const plan = Math.round(S.settings.budget * 12 / 365 * 100) / 100; // 通常の月予算どおりの1日分
-  const base = bal - spent - rent * months;
+  const base = now - rent * months;
   const r2 = n => Math.round(n * 100) / 100;
   const trips = String(raw['旅行の予算'] || '').split(',').map(x => x.trim().match(/^(.+?)\s*=\s*([\d.]+)$/)).filter(Boolean).map(m => ({ name: m[1], amt: Number(m[2]) }));
-  return { end, daysLeft, months, rent, pace, plan, atPace: r2(base - pace * daysLeft), atPlan: r2(base - plan * daysLeft), trips, tripSum: r2(trips.reduce((a, x) => a + x.amt, 0)) };
+  return { now, end, daysLeft, months, rent, pace, plan, atPace: r2(base - pace * daysLeft), atPlan: r2(base - plan * daysLeft), trips, tripSum: r2(trips.reduce((a, x) => a + x.amt, 0)) };
 }
 function renderOutlook() {
   const box = $('outlook');
@@ -548,7 +557,8 @@ function renderOutlook() {
   }
   const [, em, ed] = o.end.split('-');
   const val = n => '<b class="' + (n < 0 ? 'bad' : '') + '">' + Calc.rm(n) + '</b>' + jp(n);
-  let h = '<h2>' + Number(em) + '/' + Number(ed) + 'までの見通し</h2><div class="label">あと' + o.daysLeft + '日' + (o.months ? '・家賃 ' + Calc.rm(o.rent) + '×' + o.months + 'か月を引いたあと' : '') + '</div>' +
+  let h = '<div class="row2"><span>今の残高<small>記録した支出を引いた計算上の額</small></span><span>' + val(o.now) + '</span></div>' +
+    '<h2 style="margin-top:12px">' + Number(em) + '/' + Number(ed) + 'までの見通し</h2><div class="label">あと' + o.daysLeft + '日' + (o.months ? '・これから払う家賃 ' + Calc.rm(o.rent) + '×' + o.months + 'か月を引いたあと' : '') + '</div>' +
     '<div class="row2"><span>今月のペースのまま<small>1日 ' + Calc.rm(o.pace) + '</small></span><span>' + val(o.atPace) + '</span></div>' +
     '<div class="row2"><span>予算どおりなら<small>1日 ' + Calc.rm(o.plan) + '(月 ' + Calc.rm(S.settings.budget) + ')</small></span><span>' + val(o.atPlan) + '</span></div>';
   const diff = Math.round((o.atPlan - o.atPace) * 100) / 100;
@@ -575,6 +585,7 @@ async function load() {
     if (res.month !== S.month) return;
     S.settings = res.settings; S.tx = res.tx; S.loading = false; S.offline = false;
     if (typeof res.spentSince === 'number') { S.spentSince = res.spentSince; store.set('kb-since', res.spentSince); }
+    if (res.rentMonths) { S.rentMonths = res.rentMonths; store.set('kb-rent', res.rentMonths); }
     store.set('kb-settings', res.settings);
     store.set('kb-month-' + S.month, { tx: res.tx });
     const cur = $('currency'); if (cur.options.length && isNaN(amountValue())) cur.value = CURRENCIES.includes(res.settings.stayCurrency) ? res.settings.stayCurrency : 'MYR';
@@ -593,6 +604,7 @@ async function flush() {
       const q = S.queue[0];
       const saved = await call('addTx', q);
       S.queue.shift(); store.set('kb-queue', S.queue);
+      sinceAdjust(saved, 1);
       if (saved.date.slice(0, 7) === S.month) { S.tx = S.tx.filter(t => t.id !== saved.id).concat([saved]); store.set('kb-month-' + S.month, { tx: S.tx }); }
       if (saved.currency !== 'MYR' && saved.rate) store.set('kb-rate-' + saved.currency, saved.rate);
       S.offline = false; render();
@@ -653,7 +665,7 @@ $('list').addEventListener('click', async e => {
   const t = monthTx().find(x => x.id === id);
   if (!confirm((t.note || t.category) + ' ' + (t.myr != null ? Calc.rm(t.myr) : '') + ' を削除しますか?')) return;
   if (S.queue.some(q => q.id === id)) { S.queue = S.queue.filter(q => q.id !== id); store.set('kb-queue', S.queue); render(); return; }
-  try { await call('deleteTx', id); S.tx = S.tx.filter(x => x.id !== id); store.set('kb-month-' + S.month, { tx: S.tx }); render(); }
+  try { await call('deleteTx', id); sinceAdjust(t, -1); S.tx = S.tx.filter(x => x.id !== id); store.set('kb-month-' + S.month, { tx: S.tx }); render(); }
   catch (err) { toast('削除できませんでした。電波を確認してください'); }
 });
 window.addEventListener('online', flush);
