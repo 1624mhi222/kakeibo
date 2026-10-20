@@ -83,7 +83,8 @@
     display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
   .cal button .d { font-size: 12px; }
   .cal button .v { font-size: 10.5px; color: var(--quiet); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
-  .cal button.over { background: var(--bad-soft); } .cal button.over .v { color: var(--bad); font-weight: 600; }
+  .cal button .vj { display: block; font-size: 9.5px; color: var(--quiet); opacity: .75; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; line-height: 1.1; }
+  .cal button.over { background: var(--bad-soft); } .cal button.over .v, .cal button.over .vj { color: var(--bad); font-weight: 600; }
   .cal button.today .d { font-weight: 700; text-decoration: underline; }
   .cal button.sel { outline: 2px solid var(--accent); }
   .cal button:disabled { visibility: hidden; }
@@ -97,6 +98,7 @@
     .pair > .card { margin-bottom: 12px; }
     .cal button { min-height: 56px; }
     .cal button .v { font-size: 12px; }
+    .cal button .vj { font-size: 10.5px; }
   }
   button.amount { text-align: right; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; min-height: 58px; cursor: pointer; }
   button.amount.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
@@ -468,7 +470,7 @@ function renderCalendar() {
     const key = S.month + '-' + Calc.pad(d);
     const v = byDay[key] || 0;
     const cls = [(inBudget[key] || 0) > line ? 'over' : '', key === td ? 'today' : '', key === S.selDay ? 'sel' : ''].filter(Boolean).join(' ');
-    h += '<button type="button" data-day="' + key + '" class="' + cls + '"' + (v ? ' title="' + Calc.rm(v) + '"' : '') + '><span class="d">' + d + '</span><span class="v">' + (v ? v.toFixed(2) : '') + '</span></button>';
+    h += '<button type="button" data-day="' + key + '" class="' + cls + '"' + (v ? ' title="' + Calc.rm(v) + '"' : '') + '><span class="d">' + d + '</span><span class="v">' + (v ? v.toFixed(2) : '') + '</span>' + (v && jpyRate() ? '<span class="vj">¥' + Math.round(v * jpyRate()).toLocaleString('en-US') + '</span>' : '') + '</button>';
   }
   h += '</div><div class="calfoot"><span>この月の支出合計 <b>' + Calc.rm(Calc.sum(tx)) + '</b>' + jp(Calc.sum(tx)) + '</span><span style="white-space:nowrap">赤 = ' + Calc.rm(Math.round(line * 100) / 100) + '超えの日</span></div>';
   $('calendar').innerHTML = h;
