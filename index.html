@@ -695,7 +695,9 @@ async function flush() {
   try {
     while (S.queue.length) {
       const q = S.queue[0];
-      const saved = await call('addTx', q);
+      // 先頭の ' はスプシに「文字として入れる」合図。日付が勝手に日付型に変わるのを防ぐ
+      const saved = await call('addTx', Object.assign({}, q, { date: "'" + q.date }));
+      saved.date = String(saved.date).replace(/^'/, '');
       S.queue.shift(); store.set('kb-queue', S.queue);
       sinceAdjust(saved, 1);
       if (saved.date.slice(0, 7) === S.month) { S.tx = S.tx.filter(t => t.id !== saved.id).concat([saved]); store.set('kb-month-' + S.month, { tx: S.tx }); }
