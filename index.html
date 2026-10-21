@@ -128,6 +128,9 @@
   .big3 { font-size: 22px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
   .big3.bad, .bmeta.bad { color: var(--bad); }
   .pcOnly { display: none; } .blk { display: block; }
+  .unsent { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; font-size: 14px; }
+  .unsent small { display: block; font-size: 12px; color: var(--ink); opacity: .8; margin-top: 2px; }
+  .unsent button { flex: none; border: 0; border-radius: 8px; background: var(--warn); color: #fff; padding: 8px 12px; font-size: 13px; }
   .pavg { font-size: 12px; opacity: .8; margin-left: 4px; }
   .bavg .jpy { display: none; }
   @media (min-width: 760px) { .bavg .jpy { display: inline; } }
@@ -424,6 +427,10 @@ function renderHero() {
   }
   h += stackBar(sum) +
     '<div class="label">使った ' + Calc.rm(sum.spent) + jp(sum.spent) + ' / 予算 ' + Calc.rm(sum.budget) + '(' + Math.round(sum.ratio * 100) + '%)</div>';
+  if (S.queue.length) {
+    h = '<div class="unsent"><span>スプシに未送信 <b>' + S.queue.length + '件</b>' + (S.lastError ? '<small>' + esc(S.lastError) + '</small>' : '') + '</span>' +
+      '<button type="button" id="resend">今すぐ送る</button></div>' + h;
+  }
   $('hero').innerHTML = h;
   return sum;
 }
@@ -693,10 +700,10 @@ async function flush() {
       sinceAdjust(saved, 1);
       if (saved.date.slice(0, 7) === S.month) { S.tx = S.tx.filter(t => t.id !== saved.id).concat([saved]); store.set('kb-month-' + S.month, { tx: S.tx }); }
       if (saved.currency !== 'MYR' && saved.rate) store.set('kb-rate-' + saved.currency, saved.rate);
-      S.offline = false; render();
+      S.offline = false; S.lastError = ''; render();
     }
   } catch (e) {
-    S.offline = true; renderStatus();
+    S.offline = true; S.lastError = errMsg(e); render();
     if (String(e && e.message || e).includes('レート')) { toast(String(e.message || e)); }
   } finally { flush.busy = false; }
 }
@@ -755,6 +762,7 @@ $('list').addEventListener('click', async e => {
   catch (err) { toast('削除できませんでした。電波を確認してください'); }
 });
 window.addEventListener('online', flush);
+$('hero').addEventListener('click', e => { if (e.target.id === 'resend') { toast('送信しています…'); flush(); } });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 
 // ---- 初めて開いたときの接続 ----
@@ -798,19 +806,27 @@ function showConnect(msg) {
       $('cErr').textContent = errMsg(e);
       return;
     }
-    API.set(c); store.set('kb-ok', true); box.remove(); load();
+    API.set(c); store.set('kb-ok', true); box.remove(); showRelink(); load();
   });
+}
+
+// 画面の一番下に「つなぎ直す(今の接続先)」を出す
+function showRelink() {
+  let re = document.querySelector('.relink');
+  if (!re) {
+    re = document.createElement('button'); re.className = 'relink'; re.type = 'button';
+    re.addEventListener('click', () => showConnect());
+    $('status').after(re);
+  }
+  const id = ((API.get() || {}).url || '').match(/\/s\/([^/]+)/);
+  re.textContent = 'つなぎ直す(今の接続先: ' + (id ? id[1].slice(0, 10) + '…' : 'なし') + ')';
 }
 
 function startApp() {
   renderAmount();
   if (!window.mockApi && !API.inGas()) {
     if (!API.get()) { showConnect(); return; }
-    const st = $('status');
-    const re = document.createElement('button');
-    re.className = 'relink'; re.type = 'button'; re.textContent = 'つなぎ直す';
-    re.addEventListener('click', () => showConnect());
-    st.after(re);
+    showRelink();
     if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   }
   load();
