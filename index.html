@@ -3,7 +3,7 @@
 <head>
 <base target="_top">
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="家計簿">
 <meta name="theme-color" content="#f6f5f2">
@@ -176,6 +176,9 @@
   .connect button { margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0; border-radius: 12px; background: var(--accent); color: #fff; }
   .connect .err { color: var(--warn); font-size: 14px; min-height: 1.4em; margin-top: 8px; }
   .relink { display: block; margin: 8px auto 0; background: none; border: 0; color: var(--quiet); font-size: 12px; text-decoration: underline; }
+  /* ダブルタップや入力欄で勝手に拡大されないように */
+  html, body, button, input, select, a { touch-action: manipulation; }
+  input, select, textarea { font-size: max(16px, 1em); }
 </style>
 </head>
 <body>
