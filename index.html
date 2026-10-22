@@ -167,6 +167,10 @@
   .outlook .row2 small { display: block; color: var(--quiet); font-size: 12px; }
   .outlook .note { font-size: 13px; color: var(--quiet); line-height: 1.6; margin-top: 6px; }
   .outlook .trip { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 0; }
+  /* スマホは今の残高だけ見せて、見通しはタップで開く。PCは全部出したまま */
+  .outlook .more-btn { display: block; width: 100%; margin-top: 4px; padding: 8px 0 0; border: 0; border-top: 1px solid var(--line); background: none; color: var(--quiet); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+  @media (max-width: 899px) { .outlook:not(.open) .ol-more { display: none; } }
+  @media (min-width: 900px) { .outlook .more-btn { display: none; } }
   .connect { position: fixed; inset: 0; background: var(--bg); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; }
   .connect .card { max-width: 460px; width: 100%; }
   .connect h2 { margin: 0 0 8px; font-size: 18px; }
@@ -650,7 +654,10 @@ function renderOutlook() {
   const monthly = o.pace * 365 / 12 + o.rent;
   let dry = '';
   if (monthly > 0 && o.now > 0) { const d = new Date(); d.setDate(d.getDate() + Math.floor(o.now / monthly * 365 / 12)); dry = 'このペース+家賃だと ' + d.getFullYear() + '年' + (d.getMonth() + 1) + '月ごろ尽きる'; }
+  const open = store.get('kb-outlook-open', false);
+  box.classList.toggle('open', open);
   let h = '<div class="row2"><span>今の残高<small>' + (dry || '記録した支出を引いた計算上の額') + '</small></span><span>' + val(o.now) + '</span></div>' +
+    '<button type="button" class="more-btn" id="olToggle">' + (open ? '▲ 見通しを閉じる' : '▼ ' + Number(em) + '/' + Number(ed) + 'までの見通しを見る') + '</button><div class="ol-more">' +
     '<h2 style="margin-top:12px">' + Number(em) + '/' + Number(ed) + 'までの見通し</h2><div class="label">あと' + o.daysLeft + '日' + (o.months ? '・これから払う家賃 ' + Calc.rm(o.rent) + '×' + o.months + 'か月を引いたあと' : '') + '</div>' +
     '<div class="row2"><span>今月のペースのまま<small>1日 ' + Calc.rm(o.pace) + '</small></span><span>' + val(o.atPace) + '</span></div>' +
     '<div class="row2"><span>予算どおりなら<small>1日 ' + Calc.rm(o.plan) + '(月 ' + Calc.rm(S.settings.budget) + ')</small></span><span>' + val(o.atPlan) + '</span></div>';
@@ -662,7 +669,8 @@ function renderOutlook() {
   } else {
     h += '<div class="note">日本・キロロ・バングラデシュの費用が決まったら、設定シートの「旅行の予算」に バングラデシュ=1500, 日本=3000 のように入れると、ここで引き算します。</div>';
   }
-  box.innerHTML = h;
+  box.innerHTML = h + '</div>';
+  box.querySelector('#olToggle').onclick = () => { store.set('kb-outlook-open', !open); renderOutlook(); };
 }
 
 function render() { renderHero(); renderForm(); renderCalendar(); renderOutlook(); renderList(); renderStatus(); }
