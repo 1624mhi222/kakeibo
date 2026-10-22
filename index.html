@@ -191,9 +191,28 @@
   /* ダブルタップや入力欄で勝手に拡大されないように */
   html, body, button, input, select, a { touch-action: manipulation; }
   input, select, textarea { font-size: max(16px, 1em); }
+  /* 入力 / 分析 のタブ */
+  .tabs { display: flex; gap: 4px; background: var(--chip); border-radius: 12px; padding: 4px; margin: 0 0 12px; }
+  .tabs button { flex: 1; border: 0; border-radius: 9px; background: none; color: var(--quiet); font: inherit; font-weight: 600; padding: 8px; }
+  .tabs button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  body.t-in .only-ana, body.t-ana .only-in { display: none !important; }
+  .advice h2 { font-size: 15px; margin: 0 0 4px; }
+  .advice .adv { padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; line-height: 1.6; }
+  .advice .adv:first-of-type { border-top: 0; }
+  .advice .adv b { font-variant-numeric: tabular-nums; }
+  .advice .adv .save { color: var(--accent); font-weight: 600; }
+  .advice .adv small { display: block; color: var(--quiet); font-size: 12.5px; }
+  .advice .next { background: var(--accent-soft); border-radius: 12px; padding: 12px; margin: 4px 0 8px; font-size: 14px; line-height: 1.7; }
+  .advice .next ol { margin: 4px 0; padding-left: 20px; }
+  .advice table { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+  .advice td { padding: 3px 0; } .advice td.r { text-align: right; white-space: nowrap; } .advice td.q { color: var(--quiet); width: 52px; }
+  .dayitems { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 6px; font-size: 14px; }
+  .dayitems .di { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
+  .dayitems .di span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dayitems .di span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
 </style>
 </head>
-<body>
+<body class="t-in">
 <main>
   <div class="month">
     <button id="prev" aria-label="前の月">‹</button>
@@ -201,9 +220,15 @@
     <button id="next" aria-label="次の月">›</button>
   </div>
 
+  <nav class="tabs" id="tabs">
+    <button type="button" data-tab="in" class="on">入力</button>
+    <button type="button" data-tab="ana">分析</button>
+  </nav>
+
   <section class="card" id="hero"></section>
 
-  <div class="pair">
+  <div class="pair only-in">
+  <div>
   <section class="card" id="form">
     <div class="row">
       <button id="amount" class="amount" type="button" aria-label="金額を入力"><span id="expr" class="ph">0.00</span><small id="result"></small></button>
@@ -226,9 +251,6 @@
     </div>
   </section>
 
-  <section class="card" id="calendar"></section>
-  </div>
-  <section class="card outlook" id="outlook" hidden></section>
   <section class="card" id="fixed">
     <h2>家賃・光熱費</h2>
     <div class="label">今の残高からは引きます。カレンダーと月の予算には入れません</div>
@@ -241,7 +263,14 @@
     <div class="actions"><button class="btn" id="fxSave" type="button" disabled>記録する</button></div>
     <div id="fxList"></div>
   </section>
+  </div>
   <section class="card" id="list"></section>
+  </div>
+  <div class="pair only-ana">
+  <section class="card" id="calendar"></section>
+  <section class="card advice" id="advice"></section>
+  </div>
+  <section class="card outlook only-ana" id="outlook" hidden></section>
   <div class="pad" id="pad" hidden>
     <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button><button data-k="/" class="op">÷</button><button data-k="ac" class="fn">AC</button>
     <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button><button data-k="*" class="op">×</button><button data-k="del" class="fn del">Del</button>
@@ -587,6 +616,13 @@ function renderCalendar() {
     h += '<button type="button" data-day="' + key + '" class="' + cls + '"' + (v ? ' title="' + Calc.rm(v) + '"' : '') + '><span class="d">' + d + '</span><span class="v">' + (v ? v.toFixed(2) : '') + '</span>' + (v && jpyRate() ? '<span class="vj">¥' + Math.round(v * jpyRate()).toLocaleString('en-US') + '</span>' : '') + '</button>';
   }
   h += '</div><div class="calfoot"><span>この月の支出合計 <b>' + Calc.rm(Calc.sum(tx)) + '</b>' + jp(Calc.sum(tx)) + '</span><span style="white-space:nowrap">赤 = ' + Calc.rm(Math.round(line * 100) / 100) + '超えの日</span></div>';
+  // 日付をタップしたら、その日の明細をカレンダーの下に出す
+  if (S.selDay) {
+    const items = monthTx().filter(t => t.date === S.selDay && !isFixed(t));
+    h += '<div class="dayitems"><div class="calfoot" style="margin:0 0 4px"><span>' + Number(S.selDay.slice(5, 7)) + '/' + Number(S.selDay.slice(8)) + ' の明細</span><button class="linkbtn" data-close="1">閉じる</button></div>' +
+      (items.length ? items.map(t => '<div class="di"><span>' + esc(t.note || t.category) + (t.want ? '<span class="tag">欲しい</span>' : '') + ' <small class="label">' + esc([t.category, t.howEat].filter(Boolean).join('・')) + '</small></span><span>' + (typeof t.myr === 'number' ? Calc.rm(t.myr) : '換算待ち') + '</span></div>').join('')
+        : '<div class="empty">この日の記録はありません</div>') + '</div>';
+  }
   $('calendar').innerHTML = h;
 }
 
@@ -726,7 +762,132 @@ function saveFixed() {
   render(); flush();
 }
 
-function render() { renderHero(); renderForm(); renderCalendar(); renderOutlook(); renderFixed(); renderList(); renderStatus(); }
+// ---- アドバイス: 来月や今後減らせそうなところを、記録から計算して出す ----
+// 減らせる額は「1か月(30日)あたり」にそろえる
+function advise(tx, s, month, td) {
+  const dim = Calc.daysIn(month);
+  const days = td.slice(0, 7) === month ? Number(td.slice(8)) : td.slice(0, 7) > month ? dim : 0;
+  if (!days) return null;
+  const list = tx.filter(t => Calc.counts(t, s) && t.date <= td);
+  if (!list.length) return null;
+  const perMonth = v => v / days * 30;                        // この期間の額を1か月分に
+  const r2 = n => Math.round(n * 100) / 100;
+  const total = Calc.sum(list);
+  const tips = [];
+  // 区分ごと
+  const byCat = {};
+  list.forEach(t => { byCat[t.category] = (byCat[t.category] || 0) + t.myr; });
+  const cats = Object.keys(byCat).sort((a, b) => byCat[b] - byCat[a]).map(k => ({ name: k, sum: r2(byCat[k]), share: byCat[k] / total }));
+  // 食費の食べ方ごと
+  const food = list.filter(t => t.category === '食費');
+  const eat = {};
+  food.forEach(t => { const k = t.howEat || '未選択'; (eat[k] = eat[k] || { n: 0, sum: 0 }); eat[k].n++; eat[k].sum += t.myr; });
+  const avg = k => eat[k] ? eat[k].sum / eat[k].n : 0;
+  const perWeek = k => eat[k] ? eat[k].n / days * 7 : 0;
+  if (eat['デリバリー']) {
+    const w = perWeek('デリバリー'), cut = Math.max(1, Math.round(w / 2));
+    tips.push({ key: 'デリバリー', save: r2(Math.min(perMonth(eat['デリバリー'].sum), avg('デリバリー') * cut * 30 / 7)),
+      title: 'デリバリーを週' + cut + '回へらす',
+      body: 'デリバリーは ' + eat['デリバリー'].n + '回で ' + Calc.rm(r2(eat['デリバリー'].sum)) + '(1回平均 ' + Calc.rm(r2(avg('デリバリー'))) + '、週' + w.toFixed(1) + '回ペース)。' });
+  }
+  if (eat['カフェ・おやつ']) {
+    const w = perWeek('カフェ・おやつ'), cut = Math.max(1, Math.round(w / 2));
+    tips.push({ key: 'カフェ・おやつ', save: r2(Math.min(perMonth(eat['カフェ・おやつ'].sum), avg('カフェ・おやつ') * cut * 30 / 7)),
+      title: 'カフェ・おやつを週' + cut + '回へらす',
+      body: 'カフェ・おやつは ' + eat['カフェ・おやつ'].n + '回で ' + Calc.rm(r2(eat['カフェ・おやつ'].sum)) + '(1回平均 ' + Calc.rm(r2(avg('カフェ・おやつ'))) + '、週' + w.toFixed(1) + '回ペース)。' });
+  }
+  if (eat['外食'] && eat['外食'].n >= 2) {
+    const home = eat['自炊'] ? avg('自炊') : avg('外食') * 0.4;   // 自炊の記録がなければ外食の4割で作れる見込み
+    const diff = avg('外食') - home;
+    if (diff > 0) tips.push({ key: '外食', save: r2(diff * 30 / 7),
+      title: '外食を週1回 自炊にする',
+      body: '外食は ' + eat['外食'].n + '回で ' + Calc.rm(r2(eat['外食'].sum)) + '(1回平均 ' + Calc.rm(r2(avg('外食'))) + (eat['自炊'] ? '、自炊は1回平均 ' + Calc.rm(r2(avg('自炊'))) : '') + ')。' });
+  }
+  // 食費が1日の目安を超えた日
+  if (s.foodDaily) {
+    const fd = {};
+    food.forEach(t => { fd[t.date] = (fd[t.date] || 0) + t.myr; });
+    const overDays = Object.keys(fd).filter(d => fd[d] > s.foodDaily);
+    const extra = overDays.reduce((a, d) => a + fd[d] - s.foodDaily, 0);
+    if (overDays.length >= 3) tips.push({ key: '食費の目安', save: r2(perMonth(extra) / 2),
+      title: '食費が1日 ' + Calc.rm(s.foodDaily) + ' を超える日を半分に',
+      body: '食費が目安を超えた日は ' + overDays.length + '日(超えた分の合計 ' + Calc.rm(r2(extra)) + ')。' });
+  }
+  // 「欲しい」(食費のデリバリー・カフェは上で数えたので除く)
+  const want = list.filter(t => t.want && !(t.category === '食費' && WANT_EATS.includes(t.howEat)));
+  if (want.length) {
+    const ws = Calc.sum(want);
+    const top = want.slice().sort((a, b) => b.myr - a.myr).slice(0, 3).map(t => esc(t.note || t.category) + ' ' + Calc.rm(t.myr)).join('、');
+    tips.push({ key: '欲しい', save: r2(perMonth(ws) / 2), title: '「欲しい」を半分にする',
+      body: '「欲しい」は ' + want.length + '件で ' + Calc.rm(ws) + '。大きいもの: ' + top + '。' + Calc.rm(s.wishLine) + '以上は2日待つ。' });
+  }
+  // 小さな買い物(RM10未満、通信費などの固定的なものは除く)
+  const small = list.filter(t => t.myr < 10 && t.category !== '通信費' && !WANT_EATS.includes(t.howEat));
+  if (small.length >= 8) {
+    const ss = Calc.sum(small), cnt = {};
+    small.forEach(t => { const k = (t.note || t.category).trim(); cnt[k] = (cnt[k] || 0) + 1; });
+    const often = Object.keys(cnt).filter(k => cnt[k] >= 2).sort((a, b) => cnt[b] - cnt[a]).slice(0, 3).map(k => esc(k) + '×' + cnt[k]).join('、');
+    tips.push({ key: '小さな買い物', save: r2(perMonth(ss) / 3), title: 'RM10未満のちょこちょこ買いを3分の1へらす',
+      body: 'RM10未満の買い物が ' + small.length + '回で ' + Calc.rm(ss) + '。' + (often ? 'よく買うもの: ' + often + '。' : '') + '1回は小さくても、合わせると大きい。' });
+  }
+  // 1日の予算平均を超えた日
+  const line = s.budget / dim, byDay = {};
+  list.forEach(t => { byDay[t.date] = (byDay[t.date] || 0) + t.myr; });
+  const over = Object.keys(byDay).filter(d => byDay[d] > line).sort();
+  const big = list.filter(t => over.includes(t.date)).sort((a, b) => b.myr - a.myr).slice(0, 3)
+    .map(t => Number(t.date.slice(5, 7)) + '/' + Number(t.date.slice(8)) + ' ' + esc(t.note || t.category) + ' ' + Calc.rm(t.myr)).join('、');
+  // 来月: 減らせる額の大きい順に3つ(同じものを二重に数えないよう、デリバリーなどと「欲しい」は別々に数えている)
+  // 「食費の目安」はデリバリーなどと重なるので、それらがあるときは3つに入れない
+  const foodTip = tips.some(x => ['デリバリー', 'カフェ・おやつ', '外食'].includes(x.key));
+  const pick = tips.filter(x => x.save > 0 && !(foodTip && x.key === '食費の目安')).sort((a, b) => b.save - a.save).slice(0, 3);
+  const nextM = Calc.shift(month, 1), mb = S.settings.monthBudgets || {};
+  const nextBudget = mb[nextM] > 0 ? mb[nextM] : S.settings.budget;   // 来月の予算(月別予算がなければ通常の月予算)
+  const pace = r2(perMonth(total)), saved = r2(pick.reduce((a, x) => a + x.save, 0));
+  return { days, total, cats, eat, tips, pick, over, big, line, nextM, nextBudget, pace, saved, after: r2(pace - saved) };
+}
+function renderAdvice() {
+  const box = $('advice');
+  const s = cfg(), a = advise(monthTx(), s, S.month, today());
+  const head = '<h2>減らせそうなところ</h2>';
+  if (!a) { box.innerHTML = head + '<div class="empty">' + (S.loading ? '読み込み中…' : 'この月はまだ記録がないので、アドバイスはありません') + '</div>'; return; }
+  const [ny, nm] = a.nextM.split('-').map(Number);
+  const ndays = Calc.daysIn(a.nextM);
+  let h = head + '<div class="label">' + Number(S.month.slice(5)) + '月の' + a.days + '日分の記録から計算(月額は30日あたり)</div>';
+  h += '<div class="next"><b>' + nm + '月はこれだけ</b>' + (a.pick.length ? '<ol>' + a.pick.map(x => '<li>' + x.title + ' <span class="save">月 −' + Calc.rm(x.save) + '</span></li>').join('') + '</ol>' : '<br>大きく減らせそうなところは見つかりませんでした。今のペースを続けて。') +
+    '今のペースだと月 <b>' + Calc.rm(a.pace) + '</b>' + (a.pick.length ? ' → <b>' + Calc.rm(a.after) + '</b>' : '') +
+    '<br>' + nm + '月の予算 <b>' + Calc.rm(a.nextBudget) + '</b>(1日 ' + Calc.rm(Math.round(a.nextBudget / ndays * 100) / 100) + ')' +
+    (a.after > a.nextBudget ? '。あと <b>' + Calc.rm(Math.round((a.after - a.nextBudget) * 100) / 100) + '</b> 足りないので、食費をもう一段へらす必要あり。' : '。これなら予算内に収まります。') + '</div>';
+  a.tips.slice().sort((x, y) => y.save - x.save).forEach(x => {
+    h += '<div class="adv"><b>' + x.title + '</b> <span class="save">月 −' + Calc.rm(x.save) + '</span><small>' + x.body + '</small></div>';
+  });
+  if (a.over.length) h += '<div class="adv"><b>1日 ' + Calc.rm(Math.round(a.line * 100) / 100) + ' を超えた日: ' + a.over.length + '日</b><small>大きかった出費: ' + a.big + '</small></div>';
+  // 区分ごとの割合
+  h += '<div class="adv"><b>区分ごとの割合</b><table>' + a.cats.map(c => '<tr><td>' + esc(c.name) + '</td><td class="r">' + Calc.rm(c.sum) + '</td><td class="r q">' + Math.round(c.share * 100) + '%</td></tr>').join('') + '</table>';
+  const fe = Object.keys(a.eat);
+  if (fe.length) h += '<small style="margin-top:6px">食費の内訳: ' + fe.sort((x, y) => a.eat[y].sum - a.eat[x].sum).map(k => esc(k) + ' ' + Calc.rm(Math.round(a.eat[k].sum * 100) / 100) + '(' + a.eat[k].n + '回)').join('、') + '</small>';
+  h += '</div>';
+  // 先月とくらべる(この端末に先月の記録が残っていれば)
+  const prev = store.get('kb-month-' + Calc.shift(S.month, -1), null);
+  if (prev && prev.tx && prev.tx.length) {
+    const pf = Calc.sum(prev.tx.filter(t => Calc.counts(t, s) && t.category === '食費'));
+    const pd = Calc.daysIn(Calc.shift(S.month, -1));
+    const nowF = (a.cats.find(c => c.name === '食費') || { sum: 0 }).sum;
+    const d1 = Math.round(nowF / a.days * 100) / 100, d0 = Math.round(pf / pd * 100) / 100;
+    if (pf > 0) h += '<div class="adv"><b>先月とくらべて</b><small>食費の1日平均 ' + Calc.rm(d0) + ' → ' + Calc.rm(d1) + (d1 > d0 ? '(増えています)' : '(減っています)') + '</small></div>';
+  }
+  box.innerHTML = h;
+}
+
+// ---- タブ ----
+function setTab(t) {
+  S.tab = t; store.set('kb-tab', t);
+  document.body.classList.toggle('t-in', t === 'in'); document.body.classList.toggle('t-ana', t === 'ana');
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  if (t === 'in' && S.selDay) { S.selDay = null; renderCalendar(); renderList(); }
+  if (t === 'ana') closePad();
+}
+
+function render() { renderHero(); renderForm(); renderCalendar(); renderAdvice(); renderOutlook(); renderFixed(); renderList(); renderStatus(); }
 
 // ---- 読み込みと送信 ----
 async function load() {
@@ -817,7 +978,11 @@ document.addEventListener('click', e => { if (!$('pad').hidden && !e.target.clos
 $('skip').addEventListener('click', () => { const m = amountMyr(); resetForm(); renderForm(); toast(m ? Calc.rm(m) + ' を守りました' : 'やめておきました'); });
 $('prev').addEventListener('click', () => { S.month = Calc.shift(S.month, -1); S.selDay = null; load(); });
 $('next').addEventListener('click', () => { S.month = Calc.shift(S.month, 1); S.selDay = null; load(); });
-$('calendar').addEventListener('click', e => { const b = e.target.closest('button[data-day]'); if (!b) return; S.selDay = S.selDay === b.dataset.day ? null : b.dataset.day; renderCalendar(); renderList(); });
+$('calendar').addEventListener('click', e => {
+  if (e.target.dataset.close) { S.selDay = null; renderCalendar(); renderList(); return; }
+  const b = e.target.closest('button[data-day]'); if (!b) return; S.selDay = S.selDay === b.dataset.day ? null : b.dataset.day; renderCalendar(); renderList();
+});
+$('tabs').addEventListener('click', e => { const t = e.target.dataset.tab; if (t) setTab(t); });
 $('list').addEventListener('click', e => {
   if (e.target.dataset.all) { S.selDay = null; renderCalendar(); renderList(); return; }
   if (e.target.dataset.del) delTx(e.target.dataset.del);
@@ -897,6 +1062,7 @@ function showRelink() {
 }
 
 function startApp() {
+  setTab(store.get('kb-tab', 'in') === 'ana' ? 'ana' : 'in');
   renderAmount();
   if (!window.mockApi && !API.inGas()) {
     if (!API.get()) { showConnect(); return; }
