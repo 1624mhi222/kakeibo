@@ -99,7 +99,10 @@
   .cal button:disabled { visibility: hidden; }
   .calfoot { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; font-size: 13px; color: var(--quiet); }
   .calfoot b { font-size: 17px; color: var(--ink); font-variant-numeric: tabular-nums; }
-  .morebtn { display: block; width: 100%; margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: none; color: var(--accent); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .pager { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; margin-top: 12px; }
+  .pager button { min-width: 36px; height: 36px; padding: 0 8px; border: 1px solid var(--line); border-radius: 10px; background: none; color: var(--ink); font: inherit; font-size: 14px; font-variant-numeric: tabular-nums; cursor: pointer; }
+  .pager button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+  .pager button:disabled { opacity: .3; cursor: default; }
   .linkbtn { border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; padding: 0; }
   /* PCの広い画面: 入力欄とカレンダーを横に並べる */
   @media (min-width: 900px) {
@@ -414,7 +417,7 @@ const S = {
   settings: store.get('kb-settings', { budget: 1250, foodDaily: 20, wishLine: 50, stayCurrency: 'MYR', tripTag: '',
     categories: ['食費', '交通費', '日用品', '交際費', '美容', '通信費', '趣味・娯楽', '健康・医療', 'その他'], excluded: ['家賃', '固定費'] }),
   tx: [], queue: store.get('kb-queue', []), loading: true, offline: false, spentSince: store.get('kb-since', null), rentMonths: store.get('kb-rent', []),
-  form: { category: '食費', howEat: '', want: false }, selDay: null, listAll: false,
+  form: { category: '食費', howEat: '', want: false }, selDay: null, listPage: 0,
 };
 // ---- 食費の種類: 「ごはん」が必要な飯、それ以外はいらん飯。家ごはんは金額なし(材料は買ったときに記録済み) ----
 const FOOD_KINDS = ['ごはん', 'デリバリー', 'おやつ・カフェ', '外の飲み物', 'ついで買い'];
@@ -743,34 +746,55 @@ function renderList() {
   if (!tx.length) { $('list').innerHTML = head + '<div class="empty">' + (S.loading ? '読み込み中…' : S.selDay ? 'この日の記録はありません' : 'この月の記録はまだありません') + '</div>'; return; }
   const days = {};
   tx.forEach(t => (days[t.date] = days[t.date] || []).push(t));
-  // 普段は最近の3日分だけ。残りは「もっと見る」で開く
-  const keys = Object.keys(days), SHOW_DAYS = 3;
-  const cut = !S.selDay && keys.length > SHOW_DAYS;
-  const shown = cut && !S.listAll ? keys.slice(0, SHOW_DAYS) : keys;
-  let h = '';
-  shown.forEach(d => {
+  const groups = Object.keys(days).map(d => {
     const list = days[d];
     const total = Calc.sum(list.filter(t => typeof t.myr === 'number'));
     const [, m, dd] = d.split('-');
     const wd = '日月火水木金土'[new Date(d + 'T00:00:00').getDay()];
     const isToday = d === today();
-    h += '<div class="day' + (isToday ? ' today' : '') + '"><span>' + (isToday ? '<span class="now">今日</span>' : '') + Number(m) + '/' + Number(dd) + '(' + wd + ')</span><span class="amt2">' + Calc.rm(-total) + '</span></div>';
+    let g = '<div class="day' + (isToday ? ' today' : '') + '"><span>' + (isToday ? '<span class="now">今日</span>' : '') + Number(m) + '/' + Number(dd) + '(' + wd + ')</span><span class="amt2">' + Calc.rm(-total) + '</span></div>';
     list.forEach(t => {
       const pending = S.queue.some(q => q.id === t.id);
       const sub = subOf(t) + (t.trip ? ' ・' + t.trip : '');
       const orig = t.currency && t.currency !== 'MYR' ? '<small>' + esc(t.currency) + ' ' + Number(t.amount).toLocaleString() + '</small>' : '';
       const myr = isHome(t) ? '—' : typeof t.myr === 'number' ? Calc.rm(t.myr) + (t.currency === 'JPY' ? '' : jp(t.myr)) : '換算待ち';
-      h += '<div class="item"><div class="what">' + esc(t.note || t.category) + tagsOf(t) +
+      g += '<div class="item"><div class="what">' + esc(t.note || t.category) + tagsOf(t) +
         '<small>' + esc(sub) + (pending ? ' ・未送信' : '') + '</small></div>' +
         '<div class="amt">' + myr + orig + '</div>' +
         '<button class="del" data-del="' + esc(t.id) + '" aria-label="削除">×</button></div>';
     });
+    return '<div class="dgrp">' + g + '</div>';
   });
-  if (cut) {
-    const rest = keys.slice(SHOW_DAYS), n = rest.reduce((a, d) => a + days[d].length, 0);
-    h += '<button class="morebtn" data-more="1">' + (S.listAll ? '▲ 閉じる(最近の' + SHOW_DAYS + '日だけにする)' : '▼ もっと見る(あと' + rest.length + '日・' + n + '件)') + '</button>';
+  const el = $('list');
+  if (S.selDay) { el.innerHTML = head + groups.join(''); return; }
+  // ページ分け(日の途中では切らない)。PCは左の列(家賃・光熱費・通信費・サブスクの欄)の下の端まで、スマホは3日ずつ
+  const pages = [];
+  const left = el.previousElementSibling;
+  const side = matchMedia('(min-width: 900px)').matches && left && el.offsetParent;
+  if (side) {
+    el.innerHTML = groups.join('') + pagerHtml(1, 2);
+    const pad = parseFloat(getComputedStyle(el).paddingBottom) || 0;
+    const room = left.getBoundingClientRect().bottom - el.getBoundingClientRect().top - pad * 2 - el.querySelector('.pager').offsetHeight - 12;
+    let cur = [], used = 0;
+    [...el.querySelectorAll('.dgrp')].forEach((g, i) => {
+      const hgt = g.offsetHeight;
+      if (cur.length && used + hgt > room) { pages.push(cur); cur = []; used = 0; }
+      cur.push(groups[i]); used += hgt;
+    });
+    if (cur.length) pages.push(cur);
+  } else {
+    for (let i = 0; i < groups.length; i += 3) pages.push(groups.slice(i, i + 3));
   }
-  $('list').innerHTML = head + h;
+  S.listPage = Math.min(Math.max(S.listPage, 0), pages.length - 1);
+  el.innerHTML = pages[S.listPage].join('') + (pages.length > 1 ? pagerHtml(S.listPage + 1, pages.length) : '');
+}
+// ◀ 1 2 3 ▶ のボタン(ページが多いときは前後だけ番号を出して間は …)
+function pagerHtml(p, n) {
+  const nums = [];
+  for (let i = 1; i <= n; i++) if (n <= 7 || i === 1 || i === n || Math.abs(i - p) <= 1) nums.push(i); else if (nums[nums.length - 1] !== '…') nums.push('…');
+  return '<div class="pager"><button data-page="' + (p - 1) + '"' + (p <= 1 ? ' disabled' : '') + ' aria-label="前のページ">◀</button>' +
+    nums.map(i => i === '…' ? '<span>…</span>' : '<button data-page="' + i + '"' + (i === p ? ' class="on"' : '') + '>' + i + '</button>').join('') +
+    '<button data-page="' + (p + 1) + '"' + (p >= n ? ' disabled' : '') + ' aria-label="次のページ">▶</button></div>';
 }
 
 function renderStatus() {
@@ -1055,7 +1079,7 @@ function setTab(t) {
   S.tab = t; store.set('kb-tab', t);
   document.body.classList.toggle('t-in', t === 'in'); document.body.classList.toggle('t-ana', t === 'ana');
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-  if (t === 'in' && S.selDay) { S.selDay = null; renderCalendar(); renderList(); }
+  if (t === 'in') { if (S.selDay) { S.selDay = null; renderCalendar(); } renderList(); }
   if (t === 'ana') closePad();
 }
 
@@ -1116,7 +1140,7 @@ function save() {
   const t = { id: 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: $('date').value || today(),
     amount: a, currency: cur, category: f.category, want: f.category === '食費' ? f.howEat !== 'ごはん' : f.want, note: $('note').value.trim(),
     trip: S.settings.tripTag || '', howEat: f.category === '食費' ? f.howEat : '', myr: cur === 'MYR' ? a : null };
-  S.queue.push(t); store.set('kb-queue', S.queue);
+  S.queue.push(t); S.listPage = 0; store.set('kb-queue', S.queue);
   resetForm();
   const m = mealMark(t), l = mealLines();
   toast((m === 'good' ? '👍 お得なごはん! ' : '記録しました ') + (cur === 'MYR' ? Calc.rm(a) : cur + ' ' + a) + (m === 'pricey' ? '(割高: ' + Calc.rm(l.high) + '超え)' : ''));
@@ -1128,7 +1152,7 @@ function saveHome() {
   const t = { id: 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: $('date').value || today(),
     amount: 0, currency: 'MYR', category: '食費', want: false, note: $('note').value.trim() || '家ごはん',
     trip: S.settings.tripTag || '', howEat: HOME, myr: 0 };
-  S.queue.push(t); store.set('kb-queue', S.queue);
+  S.queue.push(t); S.listPage = 0; store.set('kb-queue', S.queue);
   resetForm();
   const mt = monthTx().filter(isHome), n = new Set(mt.map(x => x.date)).size;
   const meals = monthTx().filter(x => foodKind(x) === 'ごはん' && x.myr > 0);
@@ -1164,24 +1188,26 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('click', e => { if (!$('pad').hidden && !e.target.closest('#pad, #amount')) closePad(); });
 $('skip').addEventListener('click', () => { const m = amountMyr(); resetForm(); renderForm(); toast(m ? Calc.rm(m) + ' を守りました' : 'やめておきました'); });
-$('prev').addEventListener('click', () => { S.month = Calc.shift(S.month, -1); S.selDay = null; load(); });
-$('next').addEventListener('click', () => { S.month = Calc.shift(S.month, 1); S.selDay = null; load(); });
+$('prev').addEventListener('click', () => { S.month = Calc.shift(S.month, -1); S.selDay = null; S.listPage = 0; load(); });
+$('next').addEventListener('click', () => { S.month = Calc.shift(S.month, 1); S.selDay = null; S.listPage = 0; load(); });
 $('calendar').addEventListener('click', e => {
   if (e.target.dataset.close) { S.selDay = null; renderCalendar(); renderList(); return; }
   const b = e.target.closest('button[data-day]'); if (!b) return; S.selDay = S.selDay === b.dataset.day ? null : b.dataset.day; renderCalendar(); renderList();
 });
+let resizeT; addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(renderList, 200); });
 $('tabs').addEventListener('click', e => { const t = e.target.dataset.tab; if (t) setTab(t); });
 $('list').addEventListener('click', e => {
   if (e.target.dataset.all) { S.selDay = null; renderCalendar(); renderList(); return; }
-  if (e.target.dataset.more) {
-    S.listAll = !S.listAll; renderList();
-    if (!S.listAll) $('list').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  const pg = e.target.closest('button[data-page]');
+  if (pg) {
+    S.listPage = Number(pg.dataset.page) - 1; renderList();
+    if ($('list').getBoundingClientRect().top < 0) $('list').scrollIntoView({ block: 'start', behavior: 'smooth' });
     return;
   }
   if (e.target.dataset.del) delTx(e.target.dataset.del);
 });
 $('fixed').addEventListener('click', e => {
-  if (e.target.id === 'fxToggle') { store.set('kb-fixed-open', !store.get('kb-fixed-open', false)); renderFixed(); }
+  if (e.target.id === 'fxToggle') { store.set('kb-fixed-open', !store.get('kb-fixed-open', false)); renderFixed(); renderList(); }
   if (e.target.dataset.fx) { fxCat = e.target.dataset.fx; renderFixed(); }
   if (e.target.dataset.del) delTx(e.target.dataset.del);
 });
