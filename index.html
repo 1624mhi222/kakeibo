@@ -215,7 +215,7 @@
   .dayitems .di { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
   .dayitems .di span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dayitems .di span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
-  /* 食費: 必要な飯(ごはん)といらん飯 */
+  /* 食費: 必要な食費(ごはん)と控えたい食費 */
   .tag.bad { background: var(--bad-soft); color: var(--bad); font-weight: 600; }
   .tag.good { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
   .homebtn { display: block; width: 100%; margin-top: 8px; border: 1px dashed var(--accent); background: var(--accent-soft); color: var(--ink);
@@ -419,9 +419,9 @@ const S = {
   tx: [], queue: store.get('kb-queue', []), loading: true, offline: false, spentSince: store.get('kb-since', null), rentMonths: store.get('kb-rent', []),
   form: { category: '食費', howEat: '', want: false }, selDay: null, listPage: 0,
 };
-// ---- 食費の種類: 「ごはん」が必要な飯、それ以外はいらん飯。家ごはんは金額なし(材料は買ったときに記録済み) ----
+// ---- 食費の種類: 「ごはん」が必要な食費、それ以外は控えたい食費。家ごはんは金額なし(材料は買ったときに記録済み) ----
 const FOOD_KINDS = ['ごはん', 'デリバリー', 'おやつ・カフェ', '外の飲み物', 'ついで買い'];
-const HOME = '家ごはん', OTHER_EXTRA = 'その他のいらん飯';
+const HOME = '家ごはん', OTHER_EXTRA = 'その他の控えたい食費';
 const OLD_KIND = { '自炊': 'ごはん', '外食': 'ごはん', 'カフェ・おやつ': 'おやつ・カフェ' };   // 前の「食べ方」の読みかえ
 // 前の記録で種類がはっきりしないものは、名前から飲み物・おやつを見分ける
 const DRINK_RE = /スプライト|コーラ|ジュース|お茶|茶|コーヒー|珈琲|ラテ|ティー|ボバ|タピオカ|飲み物|ドリンク|水|ミロ|milo|coke|sprite|drink|tea|coffee|latte|boba/i;
@@ -449,7 +449,7 @@ function mealMark(t) {
 // 明細に付ける印
 function tagsOf(t) {
   const m = mealMark(t);
-  return (t.category === '食費' ? (isExtraFood(t) ? '<span class="tag">いらん飯</span>' : '') : t.want ? '<span class="tag">欲しい</span>' : '') +
+  return (t.category === '食費' ? (isExtraFood(t) ? '<span class="tag">控えたい食費</span>' : '') : t.want ? '<span class="tag">欲しい</span>' : '') +
     (m === 'pricey' ? '<span class="tag bad">割高</span>' : m === 'good' ? '<span class="tag good">👍 お得</span>' : m === 'home' ? '<span class="tag good">🏠 家ごはん</span>' : '');
 }
 const subOf = t => [t.category, foodKind(t) || t.howEat].filter(Boolean).join('・');
@@ -635,7 +635,7 @@ function renderForm() {
     cur.value = CURRENCIES.includes(s.stayCurrency) ? s.stayCurrency : 'MYR';
   }
   $('cats').innerHTML = s.categories.concat((s.excluded || []).filter(c => !s.categories.includes(c))).filter(c => !FIXED.includes(c)).map(c => '<button type="button" class="chip' + (c === f.category ? ' on' : '') + '" data-cat="' + esc(c) + '">' + esc(c) + '</button>').join('');
-  // 食費は種類を1回押すだけで必要/いらんが決まる(必要・欲しいのボタンは出さない)
+  // 食費は種類を1回押すだけで必要か控えたいかが決まる(必要・欲しいのボタンは出さない)
   $('eats').hidden = f.category !== '食費';
   $('needRow').hidden = f.category === '食費';
   $('eatKinds').innerHTML = FOOD_KINDS.map(e => '<button type="button" class="chip' + (e === 'ごはん' ? '' : ' want') + (e === f.howEat ? ' on' : '') + '" data-eat="' + e + '">' + e + '</button>').join('');
@@ -674,7 +674,7 @@ function renderCheck() {
     const fl = Math.round((sum.foodLeft - myr) * 100) / 100;
     h += fl >= 0 ? '<br>今日の食費の目安まで あと <b>' + Calc.rm(fl) + '</b>。' : '<br>今日の食費の目安を <b>' + Calc.rm(-fl) + '</b> 超えます。';
   }
-  if (S.form.category === '食費') h = '<b>いらん飯</b>です。' + h;
+  if (S.form.category === '食費') h = '<b>控えたい食費</b>です。' + h;
   else if (myr >= S.settings.wishLine) h += '<br><b>' + Calc.rm(S.settings.wishLine) + '以上の「欲しい」です。</b>今日でなくても困らないなら、2日待ってからもう一度考えてみて。';
   box.innerHTML = h; box.hidden = false;
   $('skip').hidden = false; $('save').textContent = 'それでも買う';
@@ -687,7 +687,7 @@ function renderEatHint(myr) {
   const l = mealLines(), mt = monthTx().filter(t => typeof t.myr === 'number' && t.date <= today());
   const of = k => mt.filter(t => foodKind(t) === k);
   let h;
-  if (!f.howEat) h = '「ごはん」= 必要な飯。ほかはいらん飯。種類を選んでから記録します';
+  if (!f.howEat) h = '「ごはん」= 必要な食費。ほかは控えたい食費。種類を選んでから記録します';
   else if (f.howEat === 'ごはん') {
     h = myr === null ? '1回 ' + Calc.rm(l.high) + ' を超えると<b class="bad">割高</b>、' + Calc.rm(l.low) + ' 未満は<b class="good">お得</b>'
       : myr > l.high ? '<b class="bad">割高</b>: 1回 ' + Calc.rm(l.high) + ' を ' + Calc.rm(Math.round((myr - l.high) * 100) / 100) + ' 超えています'
@@ -698,7 +698,7 @@ function renderEatHint(myr) {
     h = '<b class="bad">水を持って出れば RM0</b>。今月の外の飲み物 ' + d.length + '回・' + Calc.rm(Calc.sum(d));
   } else {
     const x = mt.filter(isExtraFood);
-    h = '今月のいらん飯 ' + x.length + '回・' + Calc.rm(Calc.sum(x));
+    h = '今月の控えたい食費 ' + x.length + '回・' + Calc.rm(Calc.sum(x));
   }
   el.innerHTML = h;
 }
@@ -931,7 +931,7 @@ function advise(tx, s, month, td) {
   food.filter(t => !isHome(t)).forEach(t => { const k = foodKind(t); (eat[k] = eat[k] || { n: 0, sum: 0 }); eat[k].n++; eat[k].sum += t.myr; });
   const avg = k => eat[k] ? eat[k].sum / eat[k].n : 0;
   const perWeek = k => eat[k] ? eat[k].n / days * 7 : 0;
-  // いらん飯: 週の回数を半分に
+  // 控えたい食費: 週の回数を半分に
   [['デリバリー'], ['おやつ・カフェ'], ['ついで買い'], ['外の飲み物', '水を持って出て、外の飲み物を']].forEach(([k, label]) => {
     if (!eat[k]) return;
     const w = perWeek(k), cut = Math.max(1, Math.round(w / 2));
@@ -939,7 +939,7 @@ function advise(tx, s, month, td) {
       title: (label || k + 'を') + '週' + cut + '回へらす',
       body: k + 'は ' + eat[k].n + '回で ' + Calc.rm(r2(eat[k].sum)) + '(1回平均 ' + Calc.rm(r2(avg(k))) + '、週' + w.toFixed(1) + '回ペース)。' });
   });
-  // 必要な飯でも、1回が割高の線を超えた分
+  // 必要な食費でも、1回が割高の線を超えた分
   const ml = mealLines();
   const pricey = food.filter(t => mealMark(t) === 'pricey');
   if (pricey.length) {
@@ -957,7 +957,7 @@ function advise(tx, s, month, td) {
       title: '食費が1日 ' + Calc.rm(s.foodDaily) + ' を超える日を半分に',
       body: '食費が目安を超えた日は ' + overDays.length + '日(超えた分の合計 ' + Calc.rm(r2(extra)) + ')。' });
   }
-  // 「欲しい」(いらん飯は上で種類ごとに数えたので除く)
+  // 「欲しい」(控えたい食費は上で種類ごとに数えたので除く)
   const want = list.filter(t => t.want && !(isExtraFood(t) && foodKind(t) !== OTHER_EXTRA));
   if (want.length) {
     const ws = Calc.sum(want);
@@ -1022,26 +1022,26 @@ function renderAdvice() {
   box.innerHTML = h;
 }
 
-// ---- 分析タブ: 必要な飯といらん飯、外の飲み物、家ごはんの日 ----
+// ---- 分析タブ: 必要な食費と控えたい食費、外の飲み物、家ごはんの日 ----
 function renderFood() {
   const box = $('food'), td = today(), dim = Calc.daysIn(S.month);
   const days = td.slice(0, 7) === S.month ? Number(td.slice(8)) : td.slice(0, 7) > S.month ? dim : 0;
   const food = monthTx().filter(t => t.category === '食費' && Calc.counts(t, S.settings) && t.date <= td);
-  let h = '<h2>食費 必要な飯 / いらん飯</h2>';
+  let h = '<h2>食費 必要 / 控えたい</h2>';
   if (!days || !food.length) { box.innerHTML = h + '<div class="empty">' + (S.loading ? '読み込み中…' : 'この月の食費の記録はまだありません') + '</div>'; return; }
   const r2 = n => Math.round(n * 100) / 100, l = mealLines();
   const of = k => food.filter(t => foodKind(t) === k);
   const extra = food.filter(isExtraFood), meals = of('ごはん');
   const xs = Calc.sum(extra), ms = Calc.sum(meals), all = xs + ms;
   const pricey = meals.filter(t => mealMark(t) === 'pricey'), good = meals.filter(t => mealMark(t) === 'good');
-  h += '<div class="label">' + Number(S.month.slice(5)) + '月のいらん飯</div><div class="big">' + Calc.rm(xs) + '</div>' +
+  h += '<div class="label">' + Number(S.month.slice(5)) + '月の控えたい食費</div><div class="big">' + Calc.rm(xs) + '</div>' +
     '<div class="label">' + extra.length + '回・食費の ' + (all ? Math.round(xs / all * 100) : 0) + '%・1か月だと約 ' + Calc.rm(r2(xs / days * 30)) + jp(r2(xs / days * 30)) + '</div>';
-  if (all) h += '<div class="fbar" role="img" aria-label="必要な飯といらん飯の割合"><span style="width:' + (ms / all * 100).toFixed(1) + '%;background:var(--accent)"></span><span style="width:' + (xs / all * 100).toFixed(1) + '%;background:var(--warn)"></span></div>' +
-    '<div class="legend"><span><span class="sw" style="background:var(--accent)"></span>必要な飯 <b>' + Calc.rm(ms) + '</b></span><span><span class="sw" style="background:var(--warn)"></span>いらん飯 <b>' + Calc.rm(xs) + '</b></span></div>';
-  // いらん飯の内訳
+  if (all) h += '<div class="fbar" role="img" aria-label="必要な食費と控えたい食費の割合"><span style="width:' + (ms / all * 100).toFixed(1) + '%;background:var(--accent)"></span><span style="width:' + (xs / all * 100).toFixed(1) + '%;background:var(--warn)"></span></div>' +
+    '<div class="legend"><span><span class="sw" style="background:var(--accent)"></span>必要な食費 <b>' + Calc.rm(ms) + '</b></span><span><span class="sw" style="background:var(--warn)"></span>控えたい食費 <b>' + Calc.rm(xs) + '</b></span></div>';
+  // 控えたい食費の内訳
   h += FOOD_KINDS.slice(1).concat([OTHER_EXTRA]).map(k => { const v = of(k); return v.length ? '<div class="row2"><span>' + k + '<small>' + v.length + '回</small></span><b>' + Calc.rm(Calc.sum(v)) + '</b></div>' : ''; }).join('');
-  // 必要な飯
-  h += '<div class="sec">必要な飯(ごはん)</div>' +
+  // 必要な食費
+  h += '<div class="sec">必要な食費(ごはん)</div>' +
     '<div class="row2"><span>ごはん<small>' + meals.length + '回' + (meals.length ? '・1回平均 ' + Calc.rm(r2(ms / meals.length)) : '') + '</small></span><b>' + Calc.rm(ms) + '</b></div>' +
     '<div class="row2"><span><span class="tag bad" style="margin:0">割高</span> ' + Calc.rm(l.high) + ' 超え<small>超えた分の合計 ' + Calc.rm(r2(pricey.reduce((a, t) => a + t.myr - l.high, 0))) + '</small></span><b>' + pricey.length + '回</b></div>' +
     '<div class="row2"><span><span class="tag good" style="margin:0">👍 お得</span> ' + Calc.rm(l.low) + ' 未満</span><b>' + good.length + '回</b></div>';
