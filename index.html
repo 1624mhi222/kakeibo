@@ -176,7 +176,8 @@
   .outlook .note { font-size: 13px; color: var(--quiet); line-height: 1.6; margin-top: 6px; }
   .outlook .trip { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 0; }
   /* スマホは今の残高だけ見せて、見通しはタップで開く。PCは全部出したまま */
-  .outlook .more-btn { display: block; width: 100%; margin-top: 4px; padding: 8px 0 0; border: 0; border-top: 1px solid var(--line); background: none; color: var(--quiet); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+  #fixed:not(.open) .fx-more { display: none; }
+  .outlook .more-btn, #fixed .more-btn { display: block; width: 100%; margin-top: 4px; padding: 8px 0 0; border: 0; border-top: 1px solid var(--line); background: none; color: var(--quiet); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
   @media (max-width: 899px) { .outlook:not(.open) .ol-more { display: none; } }
   @media (min-width: 900px) { .outlook .more-btn { display: none; } }
   .connect { position: fixed; inset: 0; background: var(--bg); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; }
@@ -252,16 +253,20 @@
   </section>
 
   <section class="card" id="fixed">
-    <h2>家賃・光熱費</h2>
-    <div class="label">今の残高からは引きます。カレンダーと月の予算には入れません</div>
+    <h2>家賃・光熱費・通信費・サブスク</h2>
+    <div class="label" id="fxSum"></div>
+    <button type="button" class="more-btn" id="fxToggle"></button>
+    <div class="fx-more">
+    <div class="label" style="margin-top:8px">今の残高からは引きます。カレンダーと月の予算には入れません</div>
     <div class="chips" id="fxCats"></div>
     <div class="field row">
       <input id="fxAmt" type="text" inputmode="decimal" placeholder="金額(RM)" autocomplete="off" style="flex:1;min-width:0">
       <input id="fxDate" type="date">
     </div>
-    <div class="field"><input id="fxNote" type="text" placeholder="内容(任意) 例: 11月分"></div>
+    <div class="field"><input id="fxNote" type="text" placeholder="内容(任意) 例: 11月分、Spotify"></div>
     <div class="actions"><button class="btn" id="fxSave" type="button" disabled>記録する</button></div>
     <div id="fxList"></div>
+    </div>
   </section>
   </div>
   <section class="card" id="list"></section>
@@ -283,8 +288,8 @@
 
 <script>
 // ---- 計算(画面と切り離した純粋な関数) ----
-// 家賃・光熱費などの固定費。残高からは引くが、カレンダー・明細・月の予算には入れない(専用の欄で入力)
-const FIXED = ['家賃', '光熱費', '固定費'];
+// 家賃・光熱費・通信費・サブスクなどの固定費。残高からは引くが、カレンダー・明細・月の予算には入れない(専用の欄で入力)
+const FIXED = ['家賃', '光熱費', '通信費', 'サブスク', '固定費'];
 const isFixed = t => FIXED.includes(t.category);
 const Calc = {
   pad: n => String(n).padStart(2, '0'),
@@ -734,19 +739,27 @@ function renderOutlook() {
 }
 
 // 家賃・光熱費の欄: この月の分の一覧と合計
-const FX_CATS = ['家賃', '光熱費'];
+const FX_CATS = ['家賃', '光熱費', '通信費', 'サブスク'];
+// 前に「通信費」で入れた Spotify などのサブスクは、サブスクとして数える
+const fxKind = t => t.category === '通信費' && /spotify|claude|netflix|ネトフリ|google/i.test(t.note || '') ? 'サブスク' : t.category;
 let fxCat = '家賃';
 const fxAmount = () => { const v = Number(String($('fxAmt').value).replace(/[,\s]/g, '')); return v > 0 ? Math.round(v * 100) / 100 : NaN; };
 function renderFixed() {
   $('fxCats').innerHTML = FX_CATS.map(c => '<button type="button" class="chip' + (c === fxCat ? ' on' : '') + '" data-fx="' + c + '">' + c + '</button>').join('');
   if (!$('fxDate').value) $('fxDate').value = today();
   $('fxSave').disabled = !(fxAmount() > 0);
+  const open = store.get('kb-fixed-open', false);
+  $('fixed').classList.toggle('open', open);
+  $('fxToggle').textContent = open ? '▲ 閉じる' : '▼ 入力・明細を見る';
   const tx = monthTx().filter(isFixed).sort((a, b) => b.date.localeCompare(a.date));
-  if (!tx.length) { $('fxList').innerHTML = '<div class="empty">この月の家賃・光熱費はまだありません</div>'; return; }
   const total = Calc.sum(tx.filter(t => typeof t.myr === 'number'));
-  $('fxList').innerHTML = '<div class="day"><span>この月の合計</span><span>' + Calc.rm(total) + jp(total) + '</span></div>' + tx.map(t => {
+  const by = {};
+  tx.filter(t => typeof t.myr === 'number').forEach(t => { const k = fxKind(t); by[k] = Math.round(((by[k] || 0) + t.myr) * 100) / 100; });
+  $('fxSum').innerHTML = tx.length ? 'この月 <b>' + Calc.rm(total) + '</b>' + jp(total) + '<br>' + Object.keys(by).map(k => esc(k) + ' ' + Calc.rm(by[k])).join(' ・ ') : 'この月の記録はまだありません';
+  if (!tx.length) { $('fxList').innerHTML = ''; return; }
+  $('fxList').innerHTML = tx.map(t => {
     const pending = S.queue.some(q => q.id === t.id);
-    return '<div class="item"><div class="what">' + esc(t.note || t.category) + '<small>' + esc(t.category) + ' ・' + Number(t.date.slice(5, 7)) + '/' + Number(t.date.slice(8)) + (pending ? ' ・未送信' : '') + '</small></div>' +
+    return '<div class="item"><div class="what">' + esc(t.note || t.category) + '<small>' + esc(fxKind(t)) + ' ・' + Number(t.date.slice(5, 7)) + '/' + Number(t.date.slice(8)) + (pending ? ' ・未送信' : '') + '</small></div>' +
       '<div class="amt">' + (typeof t.myr === 'number' ? Calc.rm(t.myr) : '換算待ち') + '</div>' +
       '<button class="del" data-del="' + esc(t.id) + '" aria-label="削除">×</button></div>';
   }).join('');
@@ -758,7 +771,7 @@ function saveFixed() {
     amount: a, currency: 'MYR', category: fxCat, want: false, note: $('fxNote').value.trim(), trip: '', howEat: '', myr: a };
   S.queue.push(t); store.set('kb-queue', S.queue);
   $('fxAmt').value = ''; $('fxNote').value = ''; $('fxDate').value = today();
-  toast(fxCat + 'を記録しました ' + Calc.rm(a));
+  toast(fxCat + ' を記録しました ' + Calc.rm(a));
   render(); flush();
 }
 
@@ -988,6 +1001,7 @@ $('list').addEventListener('click', e => {
   if (e.target.dataset.del) delTx(e.target.dataset.del);
 });
 $('fixed').addEventListener('click', e => {
+  if (e.target.id === 'fxToggle') { store.set('kb-fixed-open', !store.get('kb-fixed-open', false)); renderFixed(); }
   if (e.target.dataset.fx) { fxCat = e.target.dataset.fx; renderFixed(); }
   if (e.target.dataset.del) delTx(e.target.dataset.del);
 });
