@@ -99,6 +99,7 @@
   .cal button:disabled { visibility: hidden; }
   .calfoot { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; font-size: 13px; color: var(--quiet); }
   .calfoot b { font-size: 17px; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .morebtn { display: block; width: 100%; margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: none; color: var(--accent); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
   .linkbtn { border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; padding: 0; }
   /* PCの広い画面: 入力欄とカレンダーを横に並べる */
   @media (min-width: 900px) {
@@ -413,16 +414,23 @@ const S = {
   settings: store.get('kb-settings', { budget: 1250, foodDaily: 20, wishLine: 50, stayCurrency: 'MYR', tripTag: '',
     categories: ['食費', '交通費', '日用品', '交際費', '美容', '通信費', '趣味・娯楽', '健康・医療', 'その他'], excluded: ['家賃', '固定費'] }),
   tx: [], queue: store.get('kb-queue', []), loading: true, offline: false, spentSince: store.get('kb-since', null), rentMonths: store.get('kb-rent', []),
-  form: { category: '食費', howEat: '', want: false }, selDay: null,
+  form: { category: '食費', howEat: '', want: false }, selDay: null, listAll: false,
 };
 // ---- 食費の種類: 「ごはん」が必要な飯、それ以外はいらん飯。家ごはんは金額なし(材料は買ったときに記録済み) ----
 const FOOD_KINDS = ['ごはん', 'デリバリー', 'おやつ・カフェ', '外の飲み物', 'ついで買い'];
 const HOME = '家ごはん', OTHER_EXTRA = 'その他のいらん飯';
 const OLD_KIND = { '自炊': 'ごはん', '外食': 'ごはん', 'カフェ・おやつ': 'おやつ・カフェ' };   // 前の「食べ方」の読みかえ
+// 前の記録で種類がはっきりしないものは、名前から飲み物・おやつを見分ける
+const DRINK_RE = /スプライト|コーラ|ジュース|お茶|茶|コーヒー|珈琲|ラテ|ティー|ボバ|タピオカ|飲み物|ドリンク|水|ミロ|milo|coke|sprite|drink|tea|coffee|latte|boba/i;
+const SNACK_RE = /お菓子|菓子|おやつ|スナック|チョコ|アイス|ケーキ|ドーナツ|クッキー|グミ|ポテチ|パン屋|カフェ|snack|choco|ice ?cream|cake|donut/i;
 function foodKind(t) {
   if (t.category !== '食費') return '';
-  const k = OLD_KIND[t.howEat] || t.howEat;
-  if (k === HOME || FOOD_KINDS.includes(k)) return k;
+  if (t.howEat === HOME || FOOD_KINDS.includes(t.howEat)) return t.howEat;
+  const n = String(t.note || '');
+  if (DRINK_RE.test(n)) return '外の飲み物';
+  if (SNACK_RE.test(n)) return 'おやつ・カフェ';
+  const k = OLD_KIND[t.howEat];
+  if (k) return k;
   return t.want ? OTHER_EXTRA : 'ごはん';
 }
 const isExtraFood = t => { const k = foodKind(t); return !!k && k !== 'ごはん' && k !== HOME; };
@@ -735,8 +743,12 @@ function renderList() {
   if (!tx.length) { $('list').innerHTML = head + '<div class="empty">' + (S.loading ? '読み込み中…' : S.selDay ? 'この日の記録はありません' : 'この月の記録はまだありません') + '</div>'; return; }
   const days = {};
   tx.forEach(t => (days[t.date] = days[t.date] || []).push(t));
+  // 普段は最近の3日分だけ。残りは「もっと見る」で開く
+  const keys = Object.keys(days), SHOW_DAYS = 3;
+  const cut = !S.selDay && keys.length > SHOW_DAYS;
+  const shown = cut && !S.listAll ? keys.slice(0, SHOW_DAYS) : keys;
   let h = '';
-  Object.keys(days).forEach(d => {
+  shown.forEach(d => {
     const list = days[d];
     const total = Calc.sum(list.filter(t => typeof t.myr === 'number'));
     const [, m, dd] = d.split('-');
@@ -754,6 +766,10 @@ function renderList() {
         '<button class="del" data-del="' + esc(t.id) + '" aria-label="削除">×</button></div>';
     });
   });
+  if (cut) {
+    const rest = keys.slice(SHOW_DAYS), n = rest.reduce((a, d) => a + days[d].length, 0);
+    h += '<button class="morebtn" data-more="1">' + (S.listAll ? '▲ 閉じる(最近の' + SHOW_DAYS + '日だけにする)' : '▼ もっと見る(あと' + rest.length + '日・' + n + '件)') + '</button>';
+  }
   $('list').innerHTML = head + h;
 }
 
@@ -1157,6 +1173,11 @@ $('calendar').addEventListener('click', e => {
 $('tabs').addEventListener('click', e => { const t = e.target.dataset.tab; if (t) setTab(t); });
 $('list').addEventListener('click', e => {
   if (e.target.dataset.all) { S.selDay = null; renderCalendar(); renderList(); return; }
+  if (e.target.dataset.more) {
+    S.listAll = !S.listAll; renderList();
+    if (!S.listAll) $('list').scrollIntoView({ block: 'start', behavior: 'smooth' });
+    return;
+  }
   if (e.target.dataset.del) delTx(e.target.dataset.del);
 });
 $('fixed').addEventListener('click', e => {
