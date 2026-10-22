@@ -422,8 +422,18 @@ const S = {
   tx: [], queue: store.get('kb-queue', []), loading: true, offline: false, spentSince: store.get('kb-since', null), rentMonths: store.get('kb-rent', []),
   form: { category: '食費', howEat: '', want: false }, selDay: null, listPage: 0,
 };
-// ---- 食費の種類: 「ごはん」が必要な食費、それ以外は控えたい食費。家ごはんは金額なし(材料は買ったときに記録済み) ----
-const FOOD_KINDS = ['ごはん', 'デリバリー', 'おやつ・カフェ', '外の飲み物', 'ついで買い'];
+// ---- 食費の種類: 朝ごはん・昼ごはん・夜ごはんだけが必要な食費、それ以外は控えたい食費。家ごはんは金額なし(材料は買ったときに記録済み) ----
+// 「ごはん」は朝昼夜に分ける前の記録。名前から朝昼夜がわからないものだけ「ごはん」のまま(必要な食費)
+const MEALS = ['朝ごはん', '昼ごはん', '夜ごはん'];
+const FOOD_KINDS = MEALS.concat(['デリバリー', 'おやつ・カフェ', '外の飲み物', 'ついで買い']);
+const isMealKind = k => k === 'ごはん' || MEALS.includes(k);
+function guessMeal(note) {
+  const n = String(note || '');
+  if (/朝|モーニング|breakfast/i.test(n)) return '朝ごはん';
+  if (/昼|ランチ|lunch/i.test(n)) return '昼ごはん';
+  if (/夜|晩|夕|ディナー|dinner/i.test(n)) return '夜ごはん';
+  return 'ごはん';
+}
 const HOME = '家ごはん', OTHER_EXTRA = 'その他の控えたい食費';
 const OLD_KIND = { '自炊': 'ごはん', '外食': 'ごはん', 'カフェ・おやつ': 'おやつ・カフェ' };   // 前の「食べ方」の読みかえ
 // 前の記録で種類がはっきりしないものは、名前から飲み物・おやつを見分ける
@@ -432,20 +442,22 @@ const SNACK_RE = /お菓子|菓子|おやつ|スナック|チョコ|アイス|�
 function foodKind(t) {
   if (t.category !== '食費') return '';
   if (t.howEat === HOME || FOOD_KINDS.includes(t.howEat)) return t.howEat;
+  if (t.howEat === 'ごはん') return guessMeal(t.note);
   const n = String(t.note || '');
   if (DRINK_RE.test(n)) return '外の飲み物';
   if (SNACK_RE.test(n)) return 'おやつ・カフェ';
   const k = OLD_KIND[t.howEat];
-  if (k) return k;
-  return t.want ? OTHER_EXTRA : 'ごはん';
+  if (k) return k === 'ごはん' ? guessMeal(n) : k;
+  return t.want ? OTHER_EXTRA : guessMeal(n);
 }
-const isExtraFood = t => { const k = foodKind(t); return !!k && k !== 'ごはん' && k !== HOME; };
+const isExtraFood = t => { const k = foodKind(t); return !!k && !isMealKind(k) && k !== HOME; };
+const isMeal = t => isMealKind(foodKind(t));
 const isHome = t => foodKind(t) === HOME;
 // 1回のごはんの割高・お得の線(設定シートの「割高の線(MYR)」「お得の線(MYR)」で変えられる)
 const mealLines = () => { const r = S.settings.raw || {}; return { high: Number(r['割高の線(MYR)']) || 15, low: Number(r['お得の線(MYR)']) || 10 }; };
 function mealMark(t) {
   if (isHome(t)) return 'home';
-  if (foodKind(t) !== 'ごはん' || !(t.myr > 0)) return '';
+  if (!isMeal(t) || !(t.myr > 0)) return '';
   const l = mealLines();
   return t.myr > l.high ? 'pricey' : t.myr < l.low ? 'good' : '';
 }
@@ -655,7 +667,7 @@ function renderForm() {
   // 食費は種類を1回押すだけで必要か控えたいかが決まる(必要・欲しいのボタンは出さない)
   $('eats').hidden = f.category !== '食費';
   $('needRow').hidden = f.category === '食費';
-  $('eatKinds').innerHTML = FOOD_KINDS.map(e => '<button type="button" class="chip' + (e === 'ごはん' ? '' : ' want') + (e === f.howEat ? ' on' : '') + '" data-eat="' + e + '">' + e + '</button>').join('');
+  $('eatKinds').innerHTML = FOOD_KINDS.map(e => '<button type="button" class="chip' + (MEALS.includes(e) ? '' : ' want') + (e === f.howEat ? ' on' : '') + '" data-eat="' + e + '">' + e + '</button>').join('');
   $('need').classList.toggle('on', !f.want);
   $('want').classList.toggle('on', f.want);
   if (!$('date').value) $('date').value = today();
@@ -704,8 +716,8 @@ function renderEatHint(myr) {
   const l = mealLines(), mt = monthTx().filter(t => typeof t.myr === 'number' && t.date <= today());
   const of = k => mt.filter(t => foodKind(t) === k);
   let h;
-  if (!f.howEat) h = '「ごはん」= 必要な食費。ほかは控えたい食費。種類を選んでから記録します';
-  else if (f.howEat === 'ごはん') {
+  if (!f.howEat) h = '朝・昼・夜ごはん = 必要な食費。ほかは控えたい食費。種類を選んでから記録します';
+  else if (MEALS.includes(f.howEat)) {
     h = myr === null ? '1回 ' + Calc.rm(l.high) + ' を超えると<b class="bad">割高</b>、' + Calc.rm(l.low) + ' 未満は<b class="good">お得</b>'
       : myr > l.high ? '<b class="bad">割高</b>: 1回 ' + Calc.rm(l.high) + ' を ' + Calc.rm(Math.round((myr - l.high) * 100) / 100) + ' 超えています'
       : myr < l.low ? '<b class="good">👍 お得</b>: ' + Calc.rm(l.low) + ' 未満のごはん'
@@ -1049,7 +1061,7 @@ function renderFood() {
   if (!days || !food.length) { box.innerHTML = h + '<div class="empty">' + (S.loading ? '読み込み中…' : 'この月の食費の記録はまだありません') + '</div>'; return; }
   const r2 = n => Math.round(n * 100) / 100, l = mealLines();
   const of = k => food.filter(t => foodKind(t) === k);
-  const extra = food.filter(isExtraFood), meals = of('ごはん');
+  const extra = food.filter(isExtraFood), meals = food.filter(isMeal);
   const xs = Calc.sum(extra), ms = Calc.sum(meals), all = xs + ms;
   const pricey = meals.filter(t => mealMark(t) === 'pricey'), good = meals.filter(t => mealMark(t) === 'good');
   h += '<div class="label">' + Number(S.month.slice(5)) + '月の控えたい食費</div><div class="big">' + Calc.rm(xs) + '</div>' +
@@ -1057,10 +1069,10 @@ function renderFood() {
   if (all) h += '<div class="fbar" role="img" aria-label="必要な食費と控えたい食費の割合"><span style="width:' + (ms / all * 100).toFixed(1) + '%;background:var(--accent)"></span><span style="width:' + (xs / all * 100).toFixed(1) + '%;background:var(--warn)"></span></div>' +
     '<div class="legend"><span><span class="sw" style="background:var(--accent)"></span>必要な食費 <b>' + Calc.rm(ms) + '</b></span><span><span class="sw" style="background:var(--warn)"></span>控えたい食費 <b>' + Calc.rm(xs) + '</b></span></div>';
   // 控えたい食費の内訳
-  h += FOOD_KINDS.slice(1).concat([OTHER_EXTRA]).map(k => { const v = of(k); return v.length ? '<div class="row2"><span>' + k + '<small>' + v.length + '回</small></span><b>' + Calc.rm(Calc.sum(v)) + '</b></div>' : ''; }).join('');
+  h += FOOD_KINDS.filter(k => !MEALS.includes(k)).concat([OTHER_EXTRA]).map(k => { const v = of(k); return v.length ? '<div class="row2"><span>' + k + '<small>' + v.length + '回</small></span><b>' + Calc.rm(Calc.sum(v)) + '</b></div>' : ''; }).join('');
   // 必要な食費
-  h += '<div class="sec">必要な食費(ごはん)</div>' +
-    '<div class="row2"><span>ごはん<small>' + meals.length + '回' + (meals.length ? '・1回平均 ' + Calc.rm(r2(ms / meals.length)) : '') + '</small></span><b>' + Calc.rm(ms) + '</b></div>' +
+  h += '<div class="sec">必要な食費(朝・昼・夜ごはん) ' + meals.length + '回' + (meals.length ? '・1回平均 ' + Calc.rm(r2(ms / meals.length)) : '') + '</div>' +
+    MEALS.concat(['ごはん']).map(k => { const v = of(k); return v.length ? '<div class="row2"><span>' + (k === 'ごはん' ? 'ごはん(朝昼夜なし)' : k) + '<small>' + v.length + '回・1回平均 ' + Calc.rm(r2(Calc.sum(v) / v.length)) + '</small></span><b>' + Calc.rm(Calc.sum(v)) + '</b></div>' : ''; }).join('') +
     '<div class="row2"><span><span class="tag bad" style="margin:0">割高</span> ' + Calc.rm(l.high) + ' 超え<small>超えた分の合計 ' + Calc.rm(r2(pricey.reduce((a, t) => a + t.myr - l.high, 0))) + '</small></span><b>' + pricey.length + '回</b></div>' +
     '<div class="row2"><span><span class="tag good" style="margin:0">👍 お得</span> ' + Calc.rm(l.low) + ' 未満</span><b>' + good.length + '回</b></div>';
   // 外の飲み物
@@ -1156,7 +1168,7 @@ function save() {
   if (cur === 'その他') { cur = (prompt('通貨コード(例: HKD, KRW)') || '').trim().toUpperCase(); if (!/^[A-Z]{3}$/.test(cur)) return; }
   const f = S.form;
   const t = { id: 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: $('date').value || today(),
-    amount: a, currency: cur, category: f.category, want: f.category === '食費' ? f.howEat !== 'ごはん' : f.want, note: $('note').value.trim(),
+    amount: a, currency: cur, category: f.category, want: f.category === '食費' ? !MEALS.includes(f.howEat) : f.want, note: $('note').value.trim(),
     trip: S.settings.tripTag || '', howEat: f.category === '食費' ? f.howEat : '', myr: cur === 'MYR' ? a : null };
   S.queue.push(t); S.listPage = 0; store.set('kb-queue', S.queue);
   resetForm();
@@ -1173,7 +1185,7 @@ function saveHome() {
   S.queue.push(t); S.listPage = 0; store.set('kb-queue', S.queue);
   resetForm();
   const mt = monthTx().filter(isHome), n = new Set(mt.map(x => x.date)).size;
-  const meals = monthTx().filter(x => foodKind(x) === 'ごはん' && x.myr > 0);
+  const meals = monthTx().filter(x => isMeal(x) && x.myr > 0);
   const avg = meals.length ? Math.round(Calc.sum(meals) / meals.length * 100) / 100 : 0;
   celebrate('家ごはん、えらい!', '<div class="label">今月 ' + n + '日目の家ごはん' + (avg ? '<br>外で食べたら 約' + Calc.rm(avg) + ' のところ' : '') + '</div>');
   render(); flush();
@@ -1187,7 +1199,7 @@ function resetForm() {
 
 // ---- 操作 ----
 $('cats').addEventListener('click', e => { const c = e.target.dataset.cat; if (!c) return; S.form.category = c; if (c !== '食費') { S.form.howEat = ''; S.form.want = false; } renderForm(); });
-$('eatKinds').addEventListener('click', e => { const v = e.target.dataset.eat; if (!v) return; S.form.howEat = S.form.howEat === v ? '' : v; S.form.want = !!S.form.howEat && S.form.howEat !== 'ごはん'; renderForm(); });
+$('eatKinds').addEventListener('click', e => { const v = e.target.dataset.eat; if (!v) return; S.form.howEat = S.form.howEat === v ? '' : v; S.form.want = !!S.form.howEat && !MEALS.includes(S.form.howEat); renderForm(); });
 $('home').addEventListener('click', saveHome);
 $('need').addEventListener('click', () => { S.form.want = false; renderForm(); });
 $('want').addEventListener('click', () => { S.form.want = true; renderForm(); });
