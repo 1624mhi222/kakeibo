@@ -117,6 +117,8 @@
   button.amount.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
   button.amount .ph { color: var(--quiet); }
   button.amount small { font-size: 13px; font-weight: 400; color: var(--quiet); }
+  button.amount small.conv:empty, .fxconv:empty { display: none; }
+  .fxconv { margin: -4px 0 6px 4px; font-variant-numeric: tabular-nums; }
   .pad { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: var(--card); border-top: 1px solid var(--line);
     padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;
     box-shadow: 0 -8px 24px rgba(0,0,0,.08); }
@@ -271,7 +273,7 @@
   <div>
   <section class="card" id="form">
     <div class="row">
-      <button id="amount" class="amount" type="button" aria-label="金額を入力"><span id="expr" class="ph">0.00</span><small id="result"></small></button>
+      <button id="amount" class="amount" type="button" aria-label="金額を入力"><span id="expr" class="ph">0.00</span><small id="result"></small><small id="conv" class="conv"></small></button>
       <select id="currency" aria-label="通貨"></select>
     </div>
     <div class="chips" id="cats"></div>
@@ -306,6 +308,7 @@
       <input id="fxAmt" type="text" inputmode="decimal" placeholder="金額(RM)" autocomplete="off" style="flex:1;min-width:0">
       <input id="fxDate" type="date">
     </div>
+    <div class="label fxconv" id="fxConv"></div>
     <div class="field"><input id="fxNote" type="text" placeholder="内容(任意) 例: 11月分、Spotify"></div>
     <div class="actions"><button class="btn" id="fxSave" type="button" disabled>記録する</button></div>
     <div id="fxList"></div>
@@ -477,6 +480,19 @@ function jpyRate() {
   const t = S.tx.find(x => x.currency === 'JPY' && x.myr > 0);
   return t ? t.amount / t.myr : null;
 }
+// 入力中の金額の換算: 円以外は ≈¥、円は ≈RM(MYR以外の通貨は ≈RM と ≈¥ の両方)
+function convText(a, cur) {
+  if (!(a > 0)) return '';
+  const r = jpyRate(), rate = store.get('kb-rate-' + cur, null);
+  if (cur === 'JPY') {
+    const m = r ? a / r : rate ? a * rate : null;
+    return m ? '≈' + Calc.rm(Math.round(m * 100) / 100) : '';
+  }
+  const myr = cur === 'MYR' ? a : rate ? a * rate : null;
+  if (myr === null) return '';
+  const y = r ? '≈¥' + Math.round(myr * r).toLocaleString('en-US') : '';
+  return cur === 'MYR' ? y : '≈' + Calc.rm(Math.round(myr * 100) / 100) + (y ? ' ・ ' + y : '');
+}
 const jp = myr => { const r = jpyRate(); return r && typeof myr === 'number' ? '<span class="jpy">≈¥' + Math.round(Math.abs(myr) * r).toLocaleString('en-US') + '</span>' : ''; };
 
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 2600); }
@@ -608,6 +624,7 @@ function renderAmount() {
   $('expr').className = empty ? 'ph' : '';
   const v = amountValue();
   $('result').textContent = K.ops.length && !isNaN(v) ? '= ' + fmtN(v) : (K.ops.length ? '計算できません' : '');
+  $('conv').textContent = convText(v, $('currency').value);
 }
 function keyIn(k) {
   if (/^\d+$/.test(k)) { if ((K.cur + k).length <= 9) K.cur = (K.cur + k).replace(/^0+(?=\d)/, ''); if (K.cur === '0' || K.cur === '00') K.cur = ''; }
@@ -642,7 +659,7 @@ function renderForm() {
   $('need').classList.toggle('on', !f.want);
   $('want').classList.toggle('on', f.want);
   if (!$('date').value) $('date').value = today();
-  renderCheck();
+  renderAmount(); renderCheck();
 }
 
 function amountMyr() {
@@ -882,6 +899,7 @@ function renderFixed() {
   $('fxCats').innerHTML = FX_CATS.map(c => '<button type="button" class="chip' + (c === fxCat ? ' on' : '') + '" data-fx="' + c + '">' + c + '</button>').join('');
   if (!$('fxDate').value) $('fxDate').value = today();
   $('fxSave').disabled = !(fxAmount() > 0);
+  $('fxConv').textContent = convText(fxAmount(), 'MYR');
   const open = store.get('kb-fixed-open', false);
   $('fixed').classList.toggle('open', open);
   $('fxToggle').textContent = open ? '▲ 閉じる' : '▼ 入力・明細を見る';
@@ -889,12 +907,12 @@ function renderFixed() {
   const total = Calc.sum(tx.filter(t => typeof t.myr === 'number'));
   const by = {};
   tx.filter(t => typeof t.myr === 'number').forEach(t => { const k = fxKind(t); by[k] = Math.round(((by[k] || 0) + t.myr) * 100) / 100; });
-  $('fxSum').innerHTML = tx.length ? 'この月 <b>' + Calc.rm(total) + '</b>' + jp(total) + '<br>' + Object.keys(by).map(k => esc(k) + ' ' + Calc.rm(by[k])).join(' ・ ') : 'この月の記録はまだありません';
+  $('fxSum').innerHTML = tx.length ? 'この月 <b>' + Calc.rm(total) + '</b>' + jp(total) + '<br>' + Object.keys(by).map(k => esc(k) + ' ' + Calc.rm(by[k]) + jp(by[k])).join(' ・ ') : 'この月の記録はまだありません';
   if (!tx.length) { $('fxList').innerHTML = ''; return; }
   $('fxList').innerHTML = tx.map(t => {
     const pending = S.queue.some(q => q.id === t.id);
     return '<div class="item"><div class="what">' + esc(t.note || t.category) + '<small>' + esc(fxKind(t)) + ' ・' + Number(t.date.slice(5, 7)) + '/' + Number(t.date.slice(8)) + (pending ? ' ・未送信' : '') + '</small></div>' +
-      '<div class="amt">' + (typeof t.myr === 'number' ? Calc.rm(t.myr) : '換算待ち') + '</div>' +
+      '<div class="amt">' + (typeof t.myr === 'number' ? Calc.rm(t.myr) + jp(t.myr) : '換算待ち') + '</div>' +
       '<button class="del" data-del="' + esc(t.id) + '" aria-label="削除">×</button></div>';
   }).join('');
 }
@@ -1211,7 +1229,7 @@ $('fixed').addEventListener('click', e => {
   if (e.target.dataset.fx) { fxCat = e.target.dataset.fx; renderFixed(); }
   if (e.target.dataset.del) delTx(e.target.dataset.del);
 });
-$('fxAmt').addEventListener('input', () => { $('fxSave').disabled = !(fxAmount() > 0); });
+$('fxAmt').addEventListener('input', () => { $('fxSave').disabled = !(fxAmount() > 0); $('fxConv').textContent = convText(fxAmount(), 'MYR'); });
 $('fxSave').addEventListener('click', saveFixed);
 async function delTx(id) {
   const t = monthTx().find(x => x.id === id);
