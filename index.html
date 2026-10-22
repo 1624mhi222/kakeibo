@@ -167,7 +167,7 @@
   .big + .jpyline { margin: -4px 0 8px; }
   .jpyline .jpy { margin-left: 0; font-size: 13px; }
   .item .amt .jpy { display: block; margin-left: 0; font-size: 11px; }
-  .outlook h2 { font-size: 15px; margin: 0 0 2px; }
+  .outlook h2, #fixed h2 { font-size: 15px; margin: 0 0 2px; }
   .outlook .row2 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
   .outlook .row2:first-of-type { border-top: 0; }
   .outlook .row2 b { font-size: 18px; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -229,6 +229,18 @@
   <section class="card" id="calendar"></section>
   </div>
   <section class="card outlook" id="outlook" hidden></section>
+  <section class="card" id="fixed">
+    <h2>家賃・光熱費</h2>
+    <div class="label">今の残高からは引きます。カレンダーと月の予算には入れません</div>
+    <div class="chips" id="fxCats"></div>
+    <div class="field row">
+      <input id="fxAmt" type="text" inputmode="decimal" placeholder="金額(RM)" autocomplete="off" style="flex:1;min-width:0">
+      <input id="fxDate" type="date">
+    </div>
+    <div class="field"><input id="fxNote" type="text" placeholder="内容(任意) 例: 11月分"></div>
+    <div class="actions"><button class="btn" id="fxSave" type="button" disabled>記録する</button></div>
+    <div id="fxList"></div>
+  </section>
   <section class="card" id="list"></section>
   <div class="pad" id="pad" hidden>
     <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button><button data-k="/" class="op">÷</button><button data-k="ac" class="fn">AC</button>
@@ -242,13 +254,16 @@
 
 <script>
 // ---- 計算(画面と切り離した純粋な関数) ----
+// 家賃・光熱費などの固定費。残高からは引くが、カレンダー・明細・月の予算には入れない(専用の欄で入力)
+const FIXED = ['家賃', '光熱費', '固定費'];
+const isFixed = t => FIXED.includes(t.category);
 const Calc = {
   pad: n => String(n).padStart(2, '0'),
   ymd(d) { return d.getFullYear() + '-' + this.pad(d.getMonth() + 1) + '-' + this.pad(d.getDate()); },
   daysIn(month) { const [y, m] = month.split('-').map(Number); return new Date(y, m, 0).getDate(); },
   shift(month, k) { const [y, m] = month.split('-').map(Number); const d = new Date(y, m - 1 + k, 1); return d.getFullYear() + '-' + this.pad(d.getMonth() + 1); },
   // 予算に数える取引か(旅行タグ付き・除外区分・換算待ちは数えない)
-  counts(t, s) { return !t.trip && !s.excluded.includes(t.category) && typeof t.myr === 'number' && !isNaN(t.myr); },
+  counts(t, s) { return !t.trip && !isFixed(t) && !s.excluded.includes(t.category) && typeof t.myr === 'number' && !isNaN(t.myr); },
   sum(list) { return Math.round(list.reduce((a, t) => a + t.myr, 0) * 100) / 100; },
   summary(tx, s, month, today) {
     const inBudget = tx.filter(t => this.counts(t, s));
@@ -509,7 +524,7 @@ function renderForm() {
     CURRENCIES.forEach(c => cur.add(new Option(c, c)));
     cur.value = CURRENCIES.includes(s.stayCurrency) ? s.stayCurrency : 'MYR';
   }
-  $('cats').innerHTML = s.categories.concat((s.excluded || []).filter(c => !s.categories.includes(c))).map(c => '<button type="button" class="chip' + (c === f.category ? ' on' : '') + '" data-cat="' + esc(c) + '">' + esc(c) + '</button>').join('');
+  $('cats').innerHTML = s.categories.concat((s.excluded || []).filter(c => !s.categories.includes(c))).filter(c => !FIXED.includes(c)).map(c => '<button type="button" class="chip' + (c === f.category ? ' on' : '') + '" data-cat="' + esc(c) + '">' + esc(c) + '</button>').join('');
   $('eats').hidden = f.category !== '食費';
   $('eats').innerHTML = EATS.map(e => '<button type="button" class="chip' + (e === f.howEat ? ' on' : '') + '" data-eat="' + e + '">' + e + '</button>').join('');
   $('need').classList.toggle('on', !f.want);
@@ -552,7 +567,7 @@ function renderCheck() {
 
 // カレンダー: 各日の支出、1日の予算平均を超えた日は赤
 function renderCalendar() {
-  const tx = monthTx().filter(t => typeof t.myr === 'number');
+  const tx = monthTx().filter(t => typeof t.myr === 'number' && !isFixed(t));
   const byDay = {}, inBudget = {};
   tx.forEach(t => {
     byDay[t.date] = (byDay[t.date] || 0) + t.myr;
@@ -576,7 +591,7 @@ function renderCalendar() {
 }
 
 function renderList() {
-  let tx = monthTx().slice().sort((a, b) => b.date.localeCompare(a.date) || String(b.id).localeCompare(String(a.id)));
+  let tx = monthTx().filter(t => !isFixed(t)).sort((a, b) => b.date.localeCompare(a.date) || String(b.id).localeCompare(String(a.id)));
   let head = '';
   if (S.selDay) {
     tx = tx.filter(t => t.date === S.selDay);
@@ -682,7 +697,36 @@ function renderOutlook() {
   box.querySelector('#olToggle').onclick = () => { store.set('kb-outlook-open', !open); renderOutlook(); };
 }
 
-function render() { renderHero(); renderForm(); renderCalendar(); renderOutlook(); renderList(); renderStatus(); }
+// 家賃・光熱費の欄: この月の分の一覧と合計
+const FX_CATS = ['家賃', '光熱費'];
+let fxCat = '家賃';
+const fxAmount = () => { const v = Number(String($('fxAmt').value).replace(/[,\s]/g, '')); return v > 0 ? Math.round(v * 100) / 100 : NaN; };
+function renderFixed() {
+  $('fxCats').innerHTML = FX_CATS.map(c => '<button type="button" class="chip' + (c === fxCat ? ' on' : '') + '" data-fx="' + c + '">' + c + '</button>').join('');
+  if (!$('fxDate').value) $('fxDate').value = today();
+  $('fxSave').disabled = !(fxAmount() > 0);
+  const tx = monthTx().filter(isFixed).sort((a, b) => b.date.localeCompare(a.date));
+  if (!tx.length) { $('fxList').innerHTML = '<div class="empty">この月の家賃・光熱費はまだありません</div>'; return; }
+  const total = Calc.sum(tx.filter(t => typeof t.myr === 'number'));
+  $('fxList').innerHTML = '<div class="day"><span>この月の合計</span><span>' + Calc.rm(total) + jp(total) + '</span></div>' + tx.map(t => {
+    const pending = S.queue.some(q => q.id === t.id);
+    return '<div class="item"><div class="what">' + esc(t.note || t.category) + '<small>' + esc(t.category) + ' ・' + Number(t.date.slice(5, 7)) + '/' + Number(t.date.slice(8)) + (pending ? ' ・未送信' : '') + '</small></div>' +
+      '<div class="amt">' + (typeof t.myr === 'number' ? Calc.rm(t.myr) : '換算待ち') + '</div>' +
+      '<button class="del" data-del="' + esc(t.id) + '" aria-label="削除">×</button></div>';
+  }).join('');
+}
+function saveFixed() {
+  const a = fxAmount();
+  if (!(a > 0)) return;
+  const t = { id: 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: $('fxDate').value || today(),
+    amount: a, currency: 'MYR', category: fxCat, want: false, note: $('fxNote').value.trim(), trip: '', howEat: '', myr: a };
+  S.queue.push(t); store.set('kb-queue', S.queue);
+  $('fxAmt').value = ''; $('fxNote').value = ''; $('fxDate').value = today();
+  toast(fxCat + 'を記録しました ' + Calc.rm(a));
+  render(); flush();
+}
+
+function render() { renderHero(); renderForm(); renderCalendar(); renderOutlook(); renderFixed(); renderList(); renderStatus(); }
 
 // ---- 読み込みと送信 ----
 async function load() {
@@ -774,15 +818,23 @@ $('skip').addEventListener('click', () => { const m = amountMyr(); resetForm(); 
 $('prev').addEventListener('click', () => { S.month = Calc.shift(S.month, -1); S.selDay = null; load(); });
 $('next').addEventListener('click', () => { S.month = Calc.shift(S.month, 1); S.selDay = null; load(); });
 $('calendar').addEventListener('click', e => { const b = e.target.closest('button[data-day]'); if (!b) return; S.selDay = S.selDay === b.dataset.day ? null : b.dataset.day; renderCalendar(); renderList(); });
-$('list').addEventListener('click', async e => {
+$('list').addEventListener('click', e => {
   if (e.target.dataset.all) { S.selDay = null; renderCalendar(); renderList(); return; }
-  const id = e.target.dataset.del; if (!id) return;
+  if (e.target.dataset.del) delTx(e.target.dataset.del);
+});
+$('fixed').addEventListener('click', e => {
+  if (e.target.dataset.fx) { fxCat = e.target.dataset.fx; renderFixed(); }
+  if (e.target.dataset.del) delTx(e.target.dataset.del);
+});
+$('fxAmt').addEventListener('input', () => { $('fxSave').disabled = !(fxAmount() > 0); });
+$('fxSave').addEventListener('click', saveFixed);
+async function delTx(id) {
   const t = monthTx().find(x => x.id === id);
   if (!confirm((t.note || t.category) + ' ' + (t.myr != null ? Calc.rm(t.myr) : '') + ' を削除しますか?')) return;
   if (S.queue.some(q => q.id === id)) { S.queue = S.queue.filter(q => q.id !== id); store.set('kb-queue', S.queue); render(); return; }
   try { await call('deleteTx', id); sinceAdjust(t, -1); S.tx = S.tx.filter(x => x.id !== id); store.set('kb-month-' + S.month, { tx: S.tx }); render(); }
   catch (err) { toast('削除できませんでした。電波を確認してください'); }
-});
+}
 window.addEventListener('online', flush);
 $('hero').addEventListener('click', e => { if (e.target.id === 'resend') { toast('送信しています…'); flush(); } });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
