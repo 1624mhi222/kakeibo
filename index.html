@@ -119,6 +119,11 @@
   button.amount small { font-size: 13px; font-weight: 400; color: var(--quiet); }
   button.amount small.conv:empty, .fxconv:empty { display: none; }
   .fxconv { margin: -4px 0 6px 4px; font-variant-numeric: tabular-nums; }
+  /* 今月使った額: 予算より目立たせる */
+  .spentLine { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-top: 4px; font-size: 14px; color: var(--quiet); }
+  .spentLine b { font-size: 22px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .spentLine b.warn { color: var(--warn); } .spentLine b.bad { color: var(--bad); }
+  .spentLine .of { font-size: 13px; }
   .pad { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: var(--card); border-top: 1px solid var(--line);
     padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;
     box-shadow: 0 -8px 24px rgba(0,0,0,.08); }
@@ -305,10 +310,9 @@
     <div class="label" style="margin-top:8px">今の残高からは引きます。カレンダーと月の予算には入れません</div>
     <div class="chips" id="fxCats"></div>
     <div class="field row">
-      <input id="fxAmt" type="text" inputmode="decimal" placeholder="金額(RM)" autocomplete="off" style="flex:1;min-width:0">
+      <button id="fxAmount" class="amount" type="button" aria-label="金額(RM)を入力" style="flex:1;min-width:0"><span id="fxExpr" class="ph">0.00</span><small id="fxResult"></small><small id="fxConv" class="conv"></small></button>
       <input id="fxDate" type="date">
     </div>
-    <div class="label fxconv" id="fxConv"></div>
     <div class="field"><input id="fxNote" type="text" placeholder="内容(任意) 例: 11月分、Spotify"></div>
     <div class="actions"><button class="btn" id="fxSave" type="button" disabled>記録する</button></div>
     <div id="fxList"></div>
@@ -594,7 +598,8 @@ function renderHero() {
       '<div class="big ' + (sum.left < 0 ? 'bad' : '') + '">' + Calc.rm(sum.left) + '</div>' + (jp(sum.left) ? '<div class="jpyline">' + jp(sum.left) + '</div>' : '');
   }
   h += stackBar(sum) +
-    '<div class="label">使った ' + Calc.rm(sum.spent) + jp(sum.spent) + ' / 予算 ' + Calc.rm(sum.budget) + '(' + Math.round(sum.ratio * 100) + '%)</div>';
+    '<div class="spentLine"><span>使った</span><b class="' + (sum.ratio >= 1 ? 'bad' : sum.ratio >= 0.8 ? 'warn' : '') + '">' + Calc.rm(sum.spent) + '</b>' + jp(sum.spent) +
+    '<span class="of">/ 予算 ' + Calc.rm(sum.budget) + '(' + Math.round(sum.ratio * 100) + '%)</span></div>';
   if (S.queue.length) {
     h = '<div class="unsent"><span>スプシに未送信 <b>' + S.queue.length + '件</b>' + (S.lastError ? '<small>' + esc(S.lastError) + '</small>' : '') + '</span>' +
       '<button type="button" id="resend">今すぐ送る</button></div>' + h;
@@ -604,15 +609,22 @@ function renderHero() {
 }
 
 // ---- 金額テンキー(セント入力: MYRは 1→0.01、125→1.25。円などは整数) ----
+// テンキーは1つだけで、支出の欄(main)と家賃・光熱費の欄(fx)で使い回す。P が今テンキーで打っている欄
 const NO_DECIMAL = ['JPY', 'KRW', 'IDR', 'VND', 'CLP', 'ISK', 'HUF', 'TWD'];
-const K = { nums: [], ops: [], cur: '' };           // nums: 確定した数(桁の文字列)、ops: 演算子、cur: 入力中の数
-const decOf = () => NO_DECIMAL.includes($('currency').value) ? 0 : 2;
-const numOf = d => Number(d || '0') / Math.pow(10, decOf());
-const fmtN = v => v.toLocaleString('en-US', { minimumFractionDigits: decOf(), maximumFractionDigits: decOf() });
+const newK = () => ({ nums: [], ops: [], cur: '' }); // nums: 確定した数(桁の文字列)、ops: 演算子、cur: 入力中の数
+const PADS = {
+  main: { k: newK(), btn: 'amount', expr: 'expr', result: 'result', conv: 'conv', currency: () => $('currency').value },
+  fx: { k: newK(), btn: 'fxAmount', expr: 'fxExpr', result: 'fxResult', conv: 'fxConv', currency: () => 'MYR' },
+};
+let P = PADS.main;
+const decOf = (p = P) => NO_DECIMAL.includes(p.currency()) ? 0 : 2;
+const numOf = (d, p = P) => Number(d || '0') / Math.pow(10, decOf(p));
+const fmtN = (v, p = P) => v.toLocaleString('en-US', { minimumFractionDigits: decOf(p), maximumFractionDigits: decOf(p) });
 const OPS = { '+': '+', '-': '−', '*': '×', '/': '÷' };
-function evalK() {
-  const nums = K.nums.map(numOf), ops = K.ops.slice();
-  if (K.cur !== '' || !ops.length) nums.push(numOf(K.cur)); else ops.pop();
+function evalK(p) {
+  const K = p.k;
+  const nums = K.nums.map(d => numOf(d, p)), ops = K.ops.slice();
+  if (K.cur !== '' || !ops.length) nums.push(numOf(K.cur, p)); else ops.pop();
   // × ÷ を先に計算
   const n = [nums[0]], o = [];
   ops.forEach((op, i) => {
@@ -623,22 +635,23 @@ function evalK() {
   });
   let r = n[0];
   o.forEach((op, i) => { r = op === '+' ? r + n[i + 1] : r - n[i + 1]; });
-  const f = Math.pow(10, decOf());
+  const f = Math.pow(10, decOf(p));
   return Math.round(r * f) / f;
 }
-function amountValue() { return (K.nums.length || K.cur !== '') ? evalK() : NaN; }
-function renderAmount() {
-  const empty = !K.nums.length && K.cur === '';
+function amountValue(p = PADS.main) { return (p.k.nums.length || p.k.cur !== '') ? evalK(p) : NaN; }
+function renderAmount(p = PADS.main) {
+  const K = p.k, empty = !K.nums.length && K.cur === '';
   let txt = '';
-  K.nums.forEach((d, i) => { txt += fmtN(numOf(d)) + ' ' + OPS[K.ops[i]] + ' '; });
-  if (K.cur !== '' || !K.nums.length) txt += fmtN(numOf(K.cur));
-  $('expr').textContent = empty ? fmtN(0) : txt.trim();
-  $('expr').className = empty ? 'ph' : '';
-  const v = amountValue();
-  $('result').textContent = K.ops.length && !isNaN(v) ? '= ' + fmtN(v) : (K.ops.length ? '計算できません' : '');
-  $('conv').textContent = convText(v, $('currency').value);
+  K.nums.forEach((d, i) => { txt += fmtN(numOf(d, p), p) + ' ' + OPS[K.ops[i]] + ' '; });
+  if (K.cur !== '' || !K.nums.length) txt += fmtN(numOf(K.cur, p), p);
+  $(p.expr).textContent = empty ? fmtN(0, p) : txt.trim();
+  $(p.expr).className = empty ? 'ph' : '';
+  const v = amountValue(p);
+  $(p.result).textContent = K.ops.length && !isNaN(v) ? '= ' + fmtN(v, p) : (K.ops.length ? '計算できません' : '');
+  $(p.conv).textContent = convText(v, p.currency());
 }
 function keyIn(k) {
+  const K = P.k;
   if (/^\d+$/.test(k)) { if ((K.cur + k).length <= 9) K.cur = (K.cur + k).replace(/^0+(?=\d)/, ''); if (K.cur === '0' || K.cur === '00') K.cur = ''; }
   else if (OPS[k]) {
     if (K.cur !== '') { K.nums.push(K.cur); K.ops.push(k); K.cur = ''; }
@@ -647,14 +660,22 @@ function keyIn(k) {
   else if (k === 'del') { if (K.cur !== '') K.cur = K.cur.slice(0, -1); else if (K.ops.length) { K.ops.pop(); K.cur = K.nums.pop(); } }
   else if (k === 'ac') { K.nums = []; K.ops = []; K.cur = ''; }
   else if (k === 'ok') {
-    const v = amountValue();
+    const v = amountValue(P);
     if (K.ops.length && v > 0) { const f = Math.pow(10, decOf()); K.nums = []; K.ops = []; K.cur = String(Math.round(v * f)); }
     else if (!K.ops.length) closePad();
   }
-  renderAmount(); renderCheck();
+  renderAmount(P);
+  if (P === PADS.main) renderCheck(); else $('fxSave').disabled = !(fxAmount() > 0);
 }
-function openPad() { $('pad').hidden = false; $('amount').classList.add('on'); document.body.classList.add('padopen'); }
-function closePad() { $('pad').hidden = true; $('amount').classList.remove('on'); document.body.classList.remove('padopen'); }
+function openPad(p = PADS.main) {
+  closePad(); P = p;
+  $('pad').hidden = false; $(p.btn).classList.add('on'); document.body.classList.add('padopen');
+  // テンキーで欄が隠れるときは、欄が見えるところまで動かす
+  const b = $(p.btn).getBoundingClientRect(), top = innerHeight - $('pad').offsetHeight;
+  if (b.bottom > top - 8) scrollBy({ top: b.bottom - top + 16, behavior: 'smooth' });
+}
+function closePad() { $('pad').hidden = true; Object.values(PADS).forEach(p => $(p.btn).classList.remove('on')); document.body.classList.remove('padopen'); }
+const togglePad = p => { $('pad').hidden || P !== p ? openPad(p) : closePad(); };
 
 function renderForm() {
   const s = S.settings, f = S.form;
@@ -906,12 +927,12 @@ const FX_CATS = ['家賃', '光熱費', '通信費', 'サブスク'];
 // 前に「通信費」で入れた Spotify などのサブスクは、サブスクとして数える
 const fxKind = t => t.category === '通信費' && /spotify|claude|netflix|ネトフリ|google/i.test(t.note || '') ? 'サブスク' : t.category;
 let fxCat = '家賃';
-const fxAmount = () => { const v = Number(String($('fxAmt').value).replace(/[,\s]/g, '')); return v > 0 ? Math.round(v * 100) / 100 : NaN; };
+const fxAmount = () => { const v = amountValue(PADS.fx); return v > 0 ? v : NaN; };
 function renderFixed() {
   $('fxCats').innerHTML = FX_CATS.map(c => '<button type="button" class="chip' + (c === fxCat ? ' on' : '') + '" data-fx="' + c + '">' + c + '</button>').join('');
   if (!$('fxDate').value) $('fxDate').value = today();
   $('fxSave').disabled = !(fxAmount() > 0);
-  $('fxConv').textContent = convText(fxAmount(), 'MYR');
+  renderAmount(PADS.fx);
   const open = store.get('kb-fixed-open', false);
   $('fixed').classList.toggle('open', open);
   $('fxToggle').textContent = open ? '▲ 閉じる' : '▼ 入力・明細を見る';
@@ -934,7 +955,8 @@ function saveFixed() {
   const t = { id: 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: $('fxDate').value || today(),
     amount: a, currency: 'MYR', category: fxCat, want: false, note: $('fxNote').value.trim(), trip: '', howEat: '', myr: a };
   S.queue.push(t); store.set('kb-queue', S.queue);
-  $('fxAmt').value = ''; $('fxNote').value = ''; $('fxDate').value = today();
+  PADS.fx.k = newK(); if (P === PADS.fx) closePad();
+  $('fxNote').value = ''; $('fxDate').value = today();
   toast(fxCat + ' を記録しました ' + Calc.rm(a));
   render(); flush();
 }
@@ -1192,7 +1214,7 @@ function saveHome() {
 }
 
 function resetForm() {
-  K.nums = []; K.ops = []; K.cur = ''; renderAmount(); closePad();
+  PADS.main.k = newK(); renderAmount(); if (P === PADS.main) closePad();
   $('note').value = ''; $('date').value = today();
   S.form.want = false; S.form.howEat = '';
 }
@@ -1205,7 +1227,8 @@ $('need').addEventListener('click', () => { S.form.want = false; renderForm(); }
 $('want').addEventListener('click', () => { S.form.want = true; renderForm(); });
 ['currency', 'date'].forEach(id => $(id).addEventListener('input', () => { renderAmount(); renderCheck(); }));
 $('save').addEventListener('click', save);
-$('amount').addEventListener('click', () => { $('pad').hidden ? openPad() : closePad(); });
+$('amount').addEventListener('click', () => togglePad(PADS.main));
+$('fxAmount').addEventListener('click', () => togglePad(PADS.fx));
 $('pad').addEventListener('click', e => { const k = e.target.dataset.k; if (k) keyIn(k); });
 // PCではキーボードでも打てる(テンキーが開いているとき)
 document.addEventListener('keydown', e => {
@@ -1216,7 +1239,7 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
   if (k === 'esc') closePad(); else keyIn(k);
 });
-document.addEventListener('click', e => { if (!$('pad').hidden && !e.target.closest('#pad, #amount')) closePad(); });
+document.addEventListener('click', e => { if (!$('pad').hidden && !e.target.closest('#pad, #amount, #fxAmount')) closePad(); });
 $('skip').addEventListener('click', () => { const m = amountMyr(); resetForm(); renderForm(); toast(m ? Calc.rm(m) + ' を守りました' : 'やめておきました'); });
 $('prev').addEventListener('click', () => { S.month = Calc.shift(S.month, -1); S.selDay = null; S.listPage = 0; load(); });
 $('next').addEventListener('click', () => { S.month = Calc.shift(S.month, 1); S.selDay = null; S.listPage = 0; load(); });
@@ -1241,7 +1264,6 @@ $('fixed').addEventListener('click', e => {
   if (e.target.dataset.fx) { fxCat = e.target.dataset.fx; renderFixed(); }
   if (e.target.dataset.del) delTx(e.target.dataset.del);
 });
-$('fxAmt').addEventListener('input', () => { $('fxSave').disabled = !(fxAmount() > 0); $('fxConv').textContent = convText(fxAmount(), 'MYR'); });
 $('fxSave').addEventListener('click', saveFixed);
 async function delTx(id) {
   const t = monthTx().find(x => x.id === id);
