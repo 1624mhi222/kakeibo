@@ -44,6 +44,12 @@
   .stack > span { height: 100%; min-width: 2px; }
   .stack > span:last-of-type { border-radius: 0 6px 6px 0; }
   @media (min-width: 760px) { .stack { height: 28px; } .legend { font-size: 13px; } }
+  /* 開いたときのアニメーション: ドーナツが0から伸び、棒グラフが左から順に伸びる */
+  .anim .donut .arc { animation: dfill 1.2s cubic-bezier(.2,.8,.2,1) both; }
+  @keyframes dfill { from { stroke-dasharray: 0 100; } }
+  .anim .stack > span { transform-origin: left; animation: sgrow .6s cubic-bezier(.2,.8,.2,1) both; }
+  @keyframes sgrow { from { transform: scaleX(0); } }
+  @media (prefers-reduced-motion: reduce) { .anim .donut .arc, .anim .stack > span { animation: none; } }
   .stack > i { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--quiet); margin-bottom: 6px; }
   .legend b { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -209,13 +215,32 @@
   .tabs button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
   body.t-in .only-ana, body.t-ana .only-in { display: none !important; }
   .advice h2 { font-size: 15px; margin: 0 0 4px; }
-  .advice .adv { padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; line-height: 1.6; }
-  .advice .adv:first-of-type { border-top: 0; }
+  /* 減らせそうなところ: 1行に「やること」と「浮く額」だけ。くわしくはタップで開く */
+  .advice .adv { border-top: 1px solid var(--line); font-size: 14px; line-height: 1.6; }
   .advice .adv b { font-variant-numeric: tabular-nums; }
-  .advice .adv .save { color: var(--accent); font-weight: 600; }
-  .advice .adv small { display: block; color: var(--quiet); font-size: 12.5px; }
-  .advice .next { background: var(--accent-soft); border-radius: 12px; padding: 12px; margin: 4px 0 8px; font-size: 14px; line-height: 1.7; }
-  .advice .next ol { margin: 4px 0; padding-left: 20px; }
+  .advice .adv > summary { display: flex; align-items: center; gap: 10px; padding: 11px 0; cursor: pointer; list-style: none; }
+  .advice .adv > summary::-webkit-details-marker { display: none; }
+  .advice .adv > summary .t { flex: 1; min-width: 0; font-weight: 600; }
+  .advice .adv > summary::after { content: '›'; color: var(--quiet); font-size: 18px; line-height: 1; transition: transform .15s; }
+  .advice .adv[open] > summary::after { transform: rotate(90deg); }
+  .advice .adv .more { padding: 0 0 12px; color: var(--quiet); font-size: 13px; }
+  .advice .save { flex: none; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 15px; padding: 2px 10px; border-radius: 999px;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .advice .save small { font-size: 11px; font-weight: 500; margin-left: 1px; }
+  .advice .next { background: var(--accent-soft); border-radius: 14px; padding: 14px; margin: 8px 0 10px; font-size: 14px; }
+  .advice .next h3 { font-size: 14px; margin: 0 0 6px; }
+  .advice .next .pk { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid color-mix(in srgb, var(--accent) 18%, transparent); }
+  .advice .next .pk:first-of-type { border-top: 0; }
+  .advice .next .pk .n { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .advice .next .pk .t { flex: 1; min-width: 0; line-height: 1.45; }
+  .advice .next .pk .save { background: var(--card); }
+  .advice .flow { display: flex; align-items: flex-end; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); }
+  .advice .flow > div { flex: 1; min-width: 0; }
+  .advice .flow .k { font-size: 12px; color: var(--quiet); }
+  .advice .flow .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .advice .flow .arr { flex: none; font-size: 18px; color: var(--quiet); padding-bottom: 3px; }
+  .advice .verdict { margin-top: 10px; padding: 8px 10px; border-radius: 10px; font-size: 13.5px; line-height: 1.5; background: var(--card); }
+  .advice .verdict.bad { background: var(--bad-soft); } .advice .verdict.ok { background: var(--card); color: var(--accent); }
   .advice table { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
   .advice td { padding: 3px 0; } .advice td.r { text-align: right; white-space: nowrap; } .advice td.q { color: var(--quiet); width: 52px; }
   .dayitems { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 6px; font-size: 14px; }
@@ -225,6 +250,10 @@
   /* 食費: 必要な食費(ごはん)と控えたい食費 */
   .tag.bad { background: var(--bad-soft); color: var(--bad); font-weight: 600; }
   .tag.good { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .zerobtns { display: flex; gap: 8px; margin-top: 8px; }
+  .zerobtns .homebtn { margin-top: 0; flex: 1; min-width: 0; }
+  .zerobtns .homebtn.free { border-color: var(--line); background: var(--chip); }
+  .zerobtns .homebtn small { display: block; font-size: 11px; font-weight: 400; }
   .homebtn { display: block; width: 100%; margin-top: 8px; border: 1px dashed var(--accent); background: var(--accent-soft); color: var(--ink);
     border-radius: 12px; padding: 10px; font: inherit; font-weight: 600; }
   #needRow[hidden] { display: none; }
@@ -287,7 +316,10 @@
     <div id="eats" hidden>
       <div class="chips" id="eatKinds"></div>
       <div class="eathint" id="eatHint"></div>
-      <button class="homebtn" id="home" type="button">🏠 家で食べた(金額なし)</button>
+      <div class="zerobtns">
+        <button class="homebtn" id="home" type="button">🏠 家で食べた<small class="label">家ごはんの日に入る</small></button>
+        <button class="homebtn free" id="free" type="button">🎁 食費なし<small class="label">おごりなど</small></button>
+      </div>
     </div>
     <div class="chips" id="needRow">
       <button class="chip on" id="need" type="button">必要</button>
@@ -440,14 +472,15 @@ function guessMeal(note) {
   if (/夜|晩|夕|ディナー|dinner/i.test(n)) return '夜ごはん';
   return 'ごはん';
 }
-const HOME = '家ごはん', OTHER_EXTRA = 'その他の控えたい食費';
+// 食費なし: おごってもらったなど、お金を払わずに食べた(家ごはんの日には数えない)
+const HOME = '家ごはん', FREE = '食費なし', OTHER_EXTRA = 'その他の控えたい食費';
 const OLD_KIND = { '自炊': 'ごはん', '外食': 'ごはん', 'カフェ・おやつ': 'おやつ・カフェ' };   // 前の「食べ方」の読みかえ
 // 前の記録で種類がはっきりしないものは、名前から飲み物・おやつを見分ける
 const DRINK_RE = /スプライト|コーラ|ジュース|お茶|茶|コーヒー|珈琲|ラテ|ティー|ボバ|タピオカ|飲み物|ドリンク|水|ミロ|milo|coke|sprite|drink|tea|coffee|latte|boba/i;
 const SNACK_RE = /お菓子|菓子|おやつ|スナック|チョコ|アイス|ケーキ|ドーナツ|クッキー|グミ|ポテチ|パン屋|カフェ|snack|choco|ice ?cream|cake|donut/i;
 function foodKind(t) {
   if (t.category !== '食費') return '';
-  if (t.howEat === HOME || FOOD_KINDS.includes(t.howEat)) return t.howEat;
+  if (t.howEat === HOME || t.howEat === FREE || FOOD_KINDS.includes(t.howEat)) return t.howEat;
   if (t.howEat === 'ごはん') return guessMeal(t.note);
   const n = String(t.note || '');
   if (DRINK_RE.test(n)) return '外の飲み物';
@@ -456,13 +489,15 @@ function foodKind(t) {
   if (k) return k === 'ごはん' ? guessMeal(n) : k;
   return t.want ? OTHER_EXTRA : guessMeal(n);
 }
-const isExtraFood = t => { const k = foodKind(t); return !!k && !isMealKind(k) && k !== HOME; };
+const isExtraFood = t => { const k = foodKind(t); return !!k && !isMealKind(k) && k !== HOME && k !== FREE; };
 const isMeal = t => isMealKind(foodKind(t));
 const isHome = t => foodKind(t) === HOME;
+const isFree = t => foodKind(t) === FREE;
 // 1回のごはんの割高・お得の線(設定シートの「割高の線(MYR)」「お得の線(MYR)」で変えられる)
 const mealLines = () => { const r = S.settings.raw || {}; return { high: Number(r['割高の線(MYR)']) || 15, low: Number(r['お得の線(MYR)']) || 10 }; };
 function mealMark(t) {
   if (isHome(t)) return 'home';
+  if (isFree(t)) return 'free';
   if (!isMeal(t) || !(t.myr > 0)) return '';
   const l = mealLines();
   return t.myr > l.high ? 'pricey' : t.myr < l.low ? 'good' : '';
@@ -471,7 +506,7 @@ function mealMark(t) {
 function tagsOf(t) {
   const m = mealMark(t);
   return (t.category === '食費' ? (isExtraFood(t) ? '<span class="tag">控えたい食費</span>' : '') : t.want ? '<span class="tag">欲しい</span>' : '') +
-    (m === 'pricey' ? '<span class="tag bad">割高</span>' : m === 'good' ? '<span class="tag good">👍 お得</span>' : m === 'home' ? '<span class="tag good">🏠 家ごはん</span>' : '');
+    (m === 'pricey' ? '<span class="tag bad">割高</span>' : m === 'good' ? '<span class="tag good">👍 お得</span>' : m === 'home' ? '<span class="tag good">🏠 家ごはん</span>' : m === 'free' ? '<span class="tag">🎁 食費なし</span>' : '');
 }
 const subOf = t => [t.category, foodKind(t) || t.howEat].filter(Boolean).join('・');
 const CURRENCIES = ['MYR', 'JPY', 'SGD', 'THB', 'BDT', 'USD', 'その他'];
@@ -532,7 +567,7 @@ function stackBar(sum) {
   const order = Object.keys(CAT_COLORS).concat(['その他']).filter(k => by[k] > 0);
   const scale = Math.max(sum.budget, sum.spent) || 1;
   const color = k => 'var(--c-' + (CAT_COLORS[k] || 'other') + ')';
-  let bar = order.map(k => '<span style="width:' + (by[k] / scale * 100).toFixed(2) + '%;background:' + color(k) + '" title="' + k + ' ' + Calc.rm(by[k]) + '"></span>').join('');
+  let bar = order.map((k, i) => '<span style="animation-delay:' + i * 0.15 + 's;width:' + (by[k] / scale * 100).toFixed(2) + '%;background:' + color(k) + '" title="' + k + ' ' + Calc.rm(by[k]) + '"></span>').join('');
   if (sum.spent > sum.budget) bar += '<i style="left:' + (sum.budget / scale * 100).toFixed(2) + '%" title="予算 ' + Calc.rm(sum.budget) + '"></i>';
   const legend = order.map(k => '<span><span class="sw" style="background:' + color(k) + '"></span>' + k + ' <b>' + Calc.rm(Math.round(by[k] * 100) / 100) + '</b></span>').join('');
   return '<div class="stack" role="img" aria-label="区分ごとの支出">' + bar + '</div><div class="legend">' + legend + '</div>';
@@ -564,7 +599,7 @@ function donut(sum, cls) {
   const color = pct >= 100 ? 'var(--bad)' : pct >= 80 ? 'var(--warn)' : 'var(--accent)';
   return '<svg class="donut ' + cls + '" viewBox="0 0 40 40" role="img" aria-label="予算の' + pct + '%を使用"><g transform="rotate(-90 20 20)">' +
     '<circle r="' + R + '" cx="20" cy="20" fill="none" stroke="var(--chip)" stroke-width="6"/>' +
-    '<circle r="' + R + '" cx="20" cy="20" fill="none" stroke="' + color + '" stroke-width="6" stroke-linecap="' + (pct >= 100 ? 'butt' : 'round') + '" stroke-dasharray="' + Math.min(100, sum.ratio * 100).toFixed(2) + ' 100"/></g>' +
+    '<circle class="arc" r="' + R + '" cx="20" cy="20" fill="none" stroke="' + color + '" stroke-width="6" stroke-linecap="' + (pct >= 100 ? 'butt' : 'round') + '" stroke-dasharray="' + Math.min(100, sum.ratio * 100).toFixed(2) + ' 100"/></g>' +
     '<text x="20" y="21" text-anchor="middle" dominant-baseline="middle" class="dpct' + (pct >= 100 ? ' bad' : '') + '">' + pct + '%</text></svg>';
 }
 function budgetBox(sum) {
@@ -606,8 +641,31 @@ function renderHero() {
     h = '<div class="unsent"><span>スプシに未送信 <b>' + S.queue.length + '件</b>' + (S.lastError ? '<small>' + esc(S.lastError) + '</small>' : '') + '</span>' +
       '<button type="button" id="resend">今すぐ送る</button></div>' + h;
   }
+  $('hero').classList.remove('anim');
   $('hero').innerHTML = h;
+  // 開くたびに1回だけグラフを動かす(記録や送信で描き直すたびには動かさない)
+  if (heroAnim && monthTx().length) { heroAnim = false; playHeroAnim(); }
   return sum;
+}
+let heroAnim = true;
+function playHeroAnim() {
+  const box = $('hero');
+  box.classList.add('anim');
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  // ドーナツの%と「使った」の金額を0から数え上げる
+  const els = [...box.querySelectorAll('.donut .dpct, .spentLine b')].map(el => ({ el, txt: el.textContent }));
+  const t0 = performance.now(), dur = 1200;
+  (function step(now) {
+    const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+    els.forEach(({ el, txt }) => {
+      if (!el.isConnected) return;
+      el.textContent = k < 1 ? txt.replace(/[\d,]+(\.\d+)?/, m => {
+        const v = Number(m.replace(/,/g, '')) * e, d = (m.split('.')[1] || '').length;
+        return v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+      }) : txt;
+    });
+    if (k < 1) requestAnimationFrame(step);
+  })(t0);
 }
 
 // ---- 金額テンキー(セント入力: MYRは 1→0.01、125→1.25。円などは整数) ----
@@ -782,7 +840,7 @@ function renderCalendar() {
   if (S.selDay) {
     const items = monthTx().filter(t => t.date === S.selDay && !isFixed(t));
     h += '<div class="dayitems"><div class="calfoot" style="margin:0 0 4px"><span>' + Number(S.selDay.slice(5, 7)) + '/' + Number(S.selDay.slice(8)) + ' の明細</span><button class="linkbtn" data-close="1">閉じる</button></div>' +
-      (items.length ? items.map(t => '<div class="di"><span>' + esc(t.note || t.category) + tagsOf(t) + ' <small class="label">' + esc(subOf(t)) + '</small></span><span>' + (isHome(t) ? '—' : typeof t.myr === 'number' ? Calc.rm(t.myr) : '換算待ち') + '</span></div>').join('')
+      (items.length ? items.map(t => '<div class="di"><span>' + esc(t.note || t.category) + tagsOf(t) + ' <small class="label">' + esc(subOf(t)) + '</small></span><span>' + (isHome(t) || isFree(t) ? '—' : typeof t.myr === 'number' ? Calc.rm(t.myr) : '換算待ち') + '</span></div>').join('')
         : '<div class="empty">この日の記録はありません</div>') + '</div>';
   }
   $('calendar').innerHTML = h;
@@ -809,7 +867,7 @@ function renderList() {
       const pending = S.queue.some(q => q.id === t.id);
       const sub = subOf(t) + (t.trip ? ' ・' + t.trip : '');
       const orig = t.currency && t.currency !== 'MYR' ? '<small>' + esc(t.currency) + ' ' + Number(t.amount).toLocaleString() + '</small>' : '';
-      const myr = isHome(t) ? '—' : typeof t.myr === 'number' ? Calc.rm(t.myr) + (t.currency === 'JPY' ? '' : jp(t.myr)) : '換算待ち';
+      const myr = isHome(t) || isFree(t) ? '—' : typeof t.myr === 'number' ? Calc.rm(t.myr) + (t.currency === 'JPY' ? '' : jp(t.myr)) : '換算待ち';
       g += '<div class="item"><div class="what">' + esc(t.note || t.category) + tagsOf(t) +
         '<small>' + esc(sub) + (pending ? ' ・未送信' : '') + '</small></div>' +
         '<div class="amt">' + myr + orig + '</div>' +
@@ -982,7 +1040,7 @@ function advise(tx, s, month, td) {
   // 食費の種類ごと(家ごはんは金額なしなので数えない)
   const food = list.filter(t => t.category === '食費');
   const eat = {};
-  food.filter(t => !isHome(t)).forEach(t => { const k = foodKind(t); (eat[k] = eat[k] || { n: 0, sum: 0 }); eat[k].n++; eat[k].sum += t.myr; });
+  food.filter(t => !isHome(t) && !isFree(t)).forEach(t => { const k = foodKind(t); (eat[k] = eat[k] || { n: 0, sum: 0 }); eat[k].n++; eat[k].sum += t.myr; });
   const avg = k => eat[k] ? eat[k].sum / eat[k].n : 0;
   const perWeek = k => eat[k] ? eat[k].n / days * 7 : 0;
   // 控えたい食費: 週の回数を半分に
@@ -1051,19 +1109,26 @@ function renderAdvice() {
   const [ny, nm] = a.nextM.split('-').map(Number);
   const ndays = Calc.daysIn(a.nextM);
   let h = head + '<div class="label">' + Number(S.month.slice(5)) + '月の' + a.days + '日分の記録から計算(月額は30日あたり)</div>';
-  h += '<div class="next"><b>' + nm + '月はこれだけ</b>' + (a.pick.length ? '<ol>' + a.pick.map(x => '<li>' + x.title + ' <span class="save">月 −' + Calc.rm(x.save) + '</span></li>').join('') + '</ol>' : '<br>大きく減らせそうなところは見つかりませんでした。今のペースを続けて。') +
-    '今のペースだと月 <b>' + Calc.rm(a.pace) + '</b>' + (a.pick.length ? ' → <b>' + Calc.rm(a.after) + '</b>' : '') +
-    '<br>' + nm + '月の予算 <b>' + Calc.rm(a.nextBudget) + '</b>(1日 ' + Calc.rm(Math.round(a.nextBudget / ndays * 100) / 100) + ')' +
-    (a.after > a.nextBudget ? '。あと <b>' + Calc.rm(Math.round((a.after - a.nextBudget) * 100) / 100) + '</b> 足りないので、食費をもう一段へらす必要あり。' : '。これなら予算内に収まります。') + '</div>';
+  // 浮く額はパッと見てわかるように RM 単位(小数なし)で
+  const saveTag = v => '<span class="save">−RM' + Math.round(v).toLocaleString('en-US') + '<small>/月</small></span>';
+  const short = Math.round((a.after - a.nextBudget) * 100) / 100;
+  h += '<div class="next"><h3>' + nm + '月はこの' + (a.pick.length || '') + 'つだけ</h3>' +
+    (a.pick.length ? a.pick.map((x, i) => '<div class="pk"><span class="n">' + (i + 1) + '</span><span class="t">' + x.title + '</span>' + saveTag(x.save) + '</div>').join('')
+      : '<div>大きく減らせそうなところは見つかりませんでした。今のペースを続けて。</div>') +
+    '<div class="flow"><div><div class="k">今のペース</div><div class="v">' + Calc.rm(a.pace).replace(/\.\d\d$/, '') + '</div></div>' +
+    (a.pick.length ? '<div class="arr">→</div><div><div class="k">やると</div><div class="v">' + Calc.rm(a.after).replace(/\.\d\d$/, '') + '</div></div>' : '') +
+    '<div><div class="k">' + nm + '月の予算</div><div class="v">' + Calc.rm(a.nextBudget).replace(/\.\d\d$/, '') + '</div></div></div>' +
+    (short > 0 ? '<div class="verdict bad">あと <b>' + Calc.rm(short) + '</b> 足りません。食費をもう一段へらしましょう</div>'
+      : '<div class="verdict ok">これなら予算内に収まります(1日 ' + Calc.rm(Math.round(a.nextBudget / ndays * 100) / 100) + ')</div>') + '</div>';
   a.tips.slice().sort((x, y) => y.save - x.save).forEach(x => {
-    h += '<div class="adv"><b>' + x.title + '</b> <span class="save">月 −' + Calc.rm(x.save) + '</span><small>' + x.body + '</small></div>';
+    h += '<details class="adv"><summary><span class="t">' + x.title + '</span>' + saveTag(x.save) + '</summary><div class="more">' + x.body + '</div></details>';
   });
-  if (a.over.length) h += '<div class="adv"><b>1日 ' + Calc.rm(Math.round(a.line * 100) / 100) + ' を超えた日: ' + a.over.length + '日</b><small>大きかった出費: ' + a.big + '</small></div>';
+  if (a.over.length) h += '<details class="adv"><summary><span class="t">1日 ' + Calc.rm(Math.round(a.line * 100) / 100) + ' を超えた日: ' + a.over.length + '日</span></summary><div class="more">大きかった出費: ' + a.big + '</div></details>';
   // 区分ごとの割合
-  h += '<div class="adv"><b>区分ごとの割合</b><table>' + a.cats.map(c => '<tr><td>' + esc(c.name) + '</td><td class="r">' + Calc.rm(c.sum) + '</td><td class="r q">' + Math.round(c.share * 100) + '%</td></tr>').join('') + '</table>';
+  h += '<details class="adv"><summary><span class="t">区分ごとの割合</span></summary><div class="more"><table>' + a.cats.map(c => '<tr><td>' + esc(c.name) + '</td><td class="r">' + Calc.rm(c.sum) + '</td><td class="r q">' + Math.round(c.share * 100) + '%</td></tr>').join('') + '</table>';
   const fe = Object.keys(a.eat);
-  if (fe.length) h += '<small style="margin-top:6px">食費の内訳: ' + fe.sort((x, y) => a.eat[y].sum - a.eat[x].sum).map(k => esc(k) + ' ' + Calc.rm(Math.round(a.eat[k].sum * 100) / 100) + '(' + a.eat[k].n + '回)').join('、') + '</small>';
-  h += '</div>';
+  if (fe.length) h += '<div style="margin-top:6px">食費の内訳: ' + fe.sort((x, y) => a.eat[y].sum - a.eat[x].sum).map(k => esc(k) + ' ' + Calc.rm(Math.round(a.eat[k].sum * 100) / 100) + '(' + a.eat[k].n + '回)').join('、') + '</div>';
+  h += '</div></details>';
   // 先月とくらべる(この端末に先月の記録が残っていれば)
   const prev = store.get('kb-month-' + Calc.shift(S.month, -1), null);
   if (prev && prev.tx && prev.tx.length) {
@@ -1071,7 +1136,7 @@ function renderAdvice() {
     const pd = Calc.daysIn(Calc.shift(S.month, -1));
     const nowF = (a.cats.find(c => c.name === '食費') || { sum: 0 }).sum;
     const d1 = Math.round(nowF / a.days * 100) / 100, d0 = Math.round(pf / pd * 100) / 100;
-    if (pf > 0) h += '<div class="adv"><b>先月とくらべて</b><small>食費の1日平均 ' + Calc.rm(d0) + ' → ' + Calc.rm(d1) + (d1 > d0 ? '(増えています)' : '(減っています)') + '</small></div>';
+    if (pf > 0) h += '<details class="adv"><summary><span class="t">先月とくらべて: 食費が' + (d1 > d0 ? '増えています' : '減っています') + '</span></summary><div class="more">食費の1日平均 ' + Calc.rm(d0) + ' → ' + Calc.rm(d1) + '</div></details>';
   }
   box.innerHTML = h;
 }
@@ -1215,6 +1280,17 @@ function saveHome() {
   render(); flush();
 }
 
+// 食費なし: おごってもらったときなど。金額なしで記録するだけ(家ごはんの日には数えない)
+function saveFree() {
+  const t = { id: 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: $('date').value || today(),
+    amount: 0, currency: 'MYR', category: '食費', want: false, note: $('note').value.trim() || '食費なし',
+    trip: S.settings.tripTag || '', howEat: FREE, myr: 0 };
+  S.queue.push(t); S.listPage = 0; store.set('kb-queue', S.queue);
+  resetForm();
+  toast('🎁 食費なしで記録しました');
+  render(); flush();
+}
+
 function resetForm() {
   PADS.main.k = newK(); renderAmount(); if (P === PADS.main) closePad();
   $('note').value = ''; $('date').value = today();
@@ -1225,6 +1301,7 @@ function resetForm() {
 $('cats').addEventListener('click', e => { const c = e.target.dataset.cat; if (!c) return; S.form.category = c; if (c !== '食費') { S.form.howEat = ''; S.form.want = false; } renderForm(); });
 $('eatKinds').addEventListener('click', e => { const v = e.target.dataset.eat; if (!v) return; S.form.howEat = S.form.howEat === v ? '' : v; S.form.want = !!S.form.howEat && !MEALS.includes(S.form.howEat); renderForm(); });
 $('home').addEventListener('click', saveHome);
+$('free').addEventListener('click', saveFree);
 $('need').addEventListener('click', () => { S.form.want = false; renderForm(); });
 $('want').addEventListener('click', () => { S.form.want = true; renderForm(); });
 ['currency', 'date'].forEach(id => $(id).addEventListener('input', () => { renderAmount(); renderCheck(); }));
@@ -1276,7 +1353,7 @@ async function delTx(id) {
 }
 window.addEventListener('online', flush);
 $('hero').addEventListener('click', e => { if (e.target.id === 'resend') { toast('送信しています…'); flush(); } });
-document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { heroAnim = true; load(); } });
 
 // ---- 初めて開いたときの接続 ----
 // リンクの # の後ろに url= と key= があれば、それを保存して消す(合言葉を画面に残さない)
