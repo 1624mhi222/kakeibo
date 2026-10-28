@@ -67,6 +67,10 @@
   .chip.want.on { background: var(--warn-soft); border-color: var(--warn); }
   .field { margin-top: 12px; }
   .field input[type=text] { width: 100%; }
+  .dateline { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .dateline .label { font-size: 13px; }
+  .dateline b { color: var(--warn); }
+  input[type=date].notToday { border-color: var(--warn); background: var(--warn-soft); font-weight: 600; }
   .check { margin-top: 12px; border-radius: 12px; padding: 12px; background: var(--warn-soft); font-size: 14px; }
   .check b { font-variant-numeric: tabular-nums; }
   .actions { display: flex; gap: 8px; margin-top: 14px; }
@@ -329,6 +333,10 @@
       <input id="note" type="text" placeholder="内容(任意)" style="flex:1;min-width:0">
       <input id="date" type="date">
     </div>
+    <div class="dateline">
+      <button class="chip" id="cont" type="button">連続入力</button>
+      <span class="label" id="dateNote"></span>
+    </div>
     <div class="check" id="check" hidden></div>
     <div class="actions">
       <button class="btn ghost" id="skip" type="button" hidden>やめておく</button>
@@ -459,6 +467,7 @@ const S = {
     categories: ['食費', '交通費', '日用品', '交際費', '美容', '通信費', '趣味・娯楽', '健康・医療', 'その他'], excluded: ['家賃', '固定費'] }),
   tx: [], queue: store.get('kb-queue', []), loading: true, offline: false, spentSince: store.get('kb-since', null), rentMonths: store.get('kb-rent', []),
   form: { category: '食費', howEat: '', want: false }, selDay: null, listPage: 0,
+  cont: (c => c && c.day === today() ? c : null)(store.get('kb-cont', null)),
 };
 // ---- 食費の種類: 朝ごはん・昼ごはん・夜ごはんだけが必要な食費、それ以外は控えたい食費。家ごはんは金額なし(材料は買ったときに記録済み) ----
 // 「ごはん」は朝昼夜に分ける前の記録。名前から朝昼夜がわからないものだけ「ごはん」のまま(必要な食費)
@@ -751,8 +760,30 @@ function renderForm() {
   $('eatKinds').innerHTML = FOOD_KINDS.map(e => '<button type="button" class="chip' + (MEALS.includes(e) ? '' : ' want') + (e === f.howEat ? ' on' : '') + '" data-eat="' + e + '">' + e + '</button>').join('');
   $('need').classList.toggle('on', !f.want);
   $('want').classList.toggle('on', f.want);
-  if (!$('date').value) $('date').value = today();
-  renderAmount(); renderCheck();
+  if (!$('date').value) $('date').value = S.cont ? S.cont.date : today();
+  renderDate(); renderAmount(); renderCheck();
+}
+
+// ---- 連続入力: 記録しても日付を今日に戻さない(昨日の分をまとめて入れるときなど)。その日のうちだけ有効で、次の日に開くと今日に戻る ----
+function renderDate() {
+  const d = $('date').value || today(), td = today(), diff = daysBetween(td, d);
+  $('cont').classList.toggle('on', !!S.cont);
+  $('cont').textContent = S.cont ? '連続入力中' : '連続入力';
+  $('date').classList.toggle('notToday', d !== td);
+  const md = Number(d.slice(5, 7)) + '/' + Number(d.slice(8)) + '(' + '日月火水木金土'[new Date(d + 'T00:00:00').getDay()] + ')';
+  const which = diff === -1 ? '昨日' : diff === 1 ? '明日' : md;
+  $('dateNote').innerHTML = d !== td ? '📅 <b>' + which + 'の分</b>を入力中' + (diff === -1 || diff === 1 ? '(' + md + ')' : '')
+    : S.cont ? '記録しても日付はそのまま' : '';
+}
+function setCont(on) {
+  S.cont = on ? { day: today(), date: $('date').value || today() } : null;
+  store.set('kb-cont', S.cont);
+  if (!on) $('date').value = today();
+  renderDate(); renderCheck();
+}
+// 日付が変わったら(次の日に開いたら)連続入力をやめて今日に戻す
+function checkContDay() {
+  if (S.cont && S.cont.day !== today()) { S.cont = null; store.set('kb-cont', null); $('date').value = today(); renderDate(); renderCheck(); }
 }
 
 function amountMyr() {
@@ -1293,7 +1324,7 @@ function saveFree() {
 
 function resetForm() {
   PADS.main.k = newK(); renderAmount(); if (P === PADS.main) closePad();
-  $('note').value = ''; $('date').value = today();
+  $('note').value = ''; if (!S.cont) $('date').value = today();
   S.form.want = false; S.form.howEat = '';
 }
 
@@ -1305,6 +1336,9 @@ $('free').addEventListener('click', saveFree);
 $('need').addEventListener('click', () => { S.form.want = false; renderForm(); });
 $('want').addEventListener('click', () => { S.form.want = true; renderForm(); });
 ['currency', 'date'].forEach(id => $(id).addEventListener('input', () => { renderAmount(); renderCheck(); }));
+$('date').addEventListener('input', () => { if (S.cont) { S.cont.date = $('date').value || today(); store.set('kb-cont', S.cont); } renderDate(); });
+$('cont').addEventListener('click', () => setCont(!S.cont));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkContDay(); });
 $('save').addEventListener('click', save);
 $('amount').addEventListener('click', () => togglePad(PADS.main));
 $('fxAmount').addEventListener('click', () => togglePad(PADS.fx));
