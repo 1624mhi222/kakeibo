@@ -231,6 +231,13 @@
   html, body, button, input, select, a { touch-action: manipulation; }
   input, select, textarea { font-size: max(16px, 1em); }
   /* 入力 / 分析 のタブ */
+  /* 支出 / 収入 の切り替え */
+  .io { display: flex; gap: 4px; background: var(--chip); border-radius: 12px; padding: 4px; margin: 0 0 10px; }
+  .io button { flex: 1; border: 0; border-radius: 9px; background: none; color: var(--quiet); font: inherit; font-weight: 600; padding: 7px; }
+  .io button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .io button.on[data-io="in"] { color: var(--accent); }
+  #form.income .amount { border-color: var(--accent); }
+  .plus { color: var(--accent); font-weight: 600; }
   .tabs { display: flex; gap: 4px; background: var(--chip); border-radius: 12px; padding: 4px; margin: 0 0 12px; }
   .tabs button { flex: 1; border: 0; border-radius: 9px; background: none; color: var(--quiet); font: inherit; font-weight: 600; padding: 8px; }
   .tabs button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
@@ -277,7 +284,7 @@
   .zerobtns .homebtn small { display: block; font-size: 11px; font-weight: 400; }
   .homebtn { display: block; width: 100%; margin-top: 8px; border: 1px dashed var(--accent); background: var(--accent-soft); color: var(--ink);
     border-radius: 12px; padding: 10px; font: inherit; font-weight: 600; }
-  #needRow[hidden], #edNeed[hidden], #edEats[hidden] { display: none; }
+  #needRow[hidden], #edNeed[hidden], #edEats[hidden], .chips[hidden], #incRow[hidden], #edIncBox[hidden], #edRideBox[hidden] { display: none; }
   .eathint { font-size: 13px; color: var(--quiet); margin-top: 8px; line-height: 1.5; }
   .eathint b.bad { color: var(--bad); } .eathint b.good { color: var(--accent); }
   .cal button .d .hm { font-size: 9px; margin-left: 1px; }
@@ -329,6 +336,10 @@
   <div class="pair only-in">
   <div>
   <section class="card" id="form">
+    <div class="io" id="io">
+      <button type="button" data-io="out" class="on">支出</button>
+      <button type="button" data-io="in">収入(+)</button>
+    </div>
     <div class="row">
       <button id="amount" class="amount" type="button" aria-label="金額を入力"><span id="expr" class="ph">0.00</span><small id="result"></small><small id="conv" class="conv"></small></button>
       <select id="currency" aria-label="通貨"></select>
@@ -343,6 +354,10 @@
       </div>
     </div>
     <div class="chips" id="rides" hidden></div>
+    <div id="incRow" hidden>
+      <div class="chips" id="incKinds"></div>
+      <div class="label" style="margin-top:6px">今の残高と年末の見通しに足します。カレンダーと月の予算には入れません</div>
+    </div>
     <div class="chips" id="needRow">
       <button class="chip on" id="need" type="button">必要</button>
       <button class="chip want" id="want" type="button">欲しい</button>
@@ -383,6 +398,7 @@
   </div>
   <section class="card food only-ana" id="food"></section>
   <section class="card food only-ana" id="ridesBox"></section>
+  <section class="card food only-ana" id="incomeBox"></section>
   <div class="pair only-ana">
   <section class="card" id="calendar"></section>
   <section class="card advice" id="advice"></section>
@@ -398,6 +414,7 @@
       <div class="sublabel">区分</div>
       <div class="chips" id="edCats"></div>
       <div id="edEats"><div class="sublabel">食費の種類</div><div class="chips" id="edKinds"></div></div>
+      <div id="edIncBox" hidden><div class="sublabel">収入の種類</div><div class="chips" id="edInc"></div></div>
       <div id="edRideBox" hidden><div class="sublabel">交通費の種類</div><div class="chips" id="edRides"></div></div>
       <div class="chips" id="edNeed">
         <button class="chip" type="button" data-need="0">必要</button>
@@ -430,13 +447,17 @@
 // 家賃・光熱費・通信費・サブスクなどの固定費。残高からは引くが、カレンダー・明細・月の予算には入れない(専用の欄で入力)
 const FIXED = ['家賃', '光熱費', '通信費', 'サブスク', '固定費'];
 const isFixed = t => FIXED.includes(t.category);
+// 収入・返金など(+の記録)。スプシには区分「収入」・金額マイナスで入れる(残高の計算でそのまま足される)。カレンダー・月の予算には入れない
+const INCOME = '収入';
+const INCOME_KINDS = ['給料', '返金', '立て替え戻り', 'その他'];
+const isIncome = t => t.category === INCOME;
 const Calc = {
   pad: n => String(n).padStart(2, '0'),
   ymd(d) { return d.getFullYear() + '-' + this.pad(d.getMonth() + 1) + '-' + this.pad(d.getDate()); },
   daysIn(month) { const [y, m] = month.split('-').map(Number); return new Date(y, m, 0).getDate(); },
   shift(month, k) { const [y, m] = month.split('-').map(Number); const d = new Date(y, m - 1 + k, 1); return d.getFullYear() + '-' + this.pad(d.getMonth() + 1); },
   // 予算に数える取引か(旅行タグ付き・除外区分・換算待ちは数えない)
-  counts(t, s) { return !t.trip && !isFixed(t) && !s.excluded.includes(t.category) && typeof t.myr === 'number' && !isNaN(t.myr); },
+  counts(t, s) { return !t.trip && !isFixed(t) && !isIncome(t) && !s.excluded.includes(t.category) && typeof t.myr === 'number' && !isNaN(t.myr); },
   sum(list) { return Math.round(list.reduce((a, t) => a + t.myr, 0) * 100) / 100; },
   summary(tx, s, month, today) {
     const inBudget = tx.filter(t => this.counts(t, s));
@@ -573,6 +594,8 @@ function rideKind(t) {
   const n = String(t.note || '');
   return TRAIN_RE.test(n) ? '公共交通機関' : GRAB_RE.test(n) ? 'Grab' : 'その他';
 }
+// 明細の金額。収入は緑の +RM
+const money = t => isIncome(t) && typeof t.myr === 'number' ? '<span class="plus">+' + Calc.rm(-t.myr) + '</span>' : Calc.rm(t.myr);
 const subOf = t => [t.category, foodKind(t) || rideKind(t) || t.howEat].filter(Boolean).join('・');
 const CURRENCIES = ['MYR', 'JPY', 'SGD', 'THB', 'BDT', 'USD', 'その他'];
 const $ = id => document.getElementById(id);
@@ -810,10 +833,16 @@ function renderForm() {
     CURRENCIES.forEach(c => cur.add(new Option(c, c)));
     cur.value = CURRENCIES.includes(s.stayCurrency) ? s.stayCurrency : 'MYR';
   }
-  $('cats').innerHTML = s.categories.concat((s.excluded || []).filter(c => !s.categories.includes(c))).filter(c => !FIXED.includes(c)).map(c => '<button type="button" class="chip' + (c === f.category ? ' on' : '') + '" data-cat="' + esc(c) + '">' + esc(c) + '</button>').join('');
+  const inc = f.category === INCOME;
+  $('form').classList.toggle('income', inc);
+  $('io').querySelectorAll('button').forEach(b => b.classList.toggle('on', (b.dataset.io === 'in') === inc));
+  $('cats').hidden = inc;
+  $('incRow').hidden = !inc;
+  $('incKinds').innerHTML = INCOME_KINDS.map(k => '<button type="button" class="chip' + (k === f.howEat ? ' on' : '') + '" data-inc="' + k + '">' + k + '</button>').join('');
+  $('cats').innerHTML = s.categories.concat((s.excluded || []).filter(c => !s.categories.includes(c))).filter(c => !FIXED.includes(c) && c !== INCOME).map(c => '<button type="button" class="chip' + (c === f.category ? ' on' : '') + '" data-cat="' + esc(c) + '">' + esc(c) + '</button>').join('');
   // 食費は種類を1回押すだけで必要か控えたいかが決まる(必要・欲しいのボタンは出さない)
   $('eats').hidden = f.category !== '食費';
-  $('needRow').hidden = f.category === '食費';
+  $('needRow').hidden = f.category === '食費' || inc;
   $('eatKinds').innerHTML = FOOD_KINDS.map(e => '<button type="button" class="chip' + (MEALS.includes(e) ? '' : ' want') + (e === f.howEat ? ' on' : '') + '" data-eat="' + e + '">' + e + '</button>').join('');
   $('rides').hidden = f.category !== '交通費';
   $('rides').innerHTML = RIDES.map(r => '<button type="button" class="chip' + (r === f.howEat ? ' on' : '') + '" data-ride="' + r + '">' + r + '</button>').join('');
@@ -863,8 +892,8 @@ function renderCheck() {
   renderEatHint(myr);
   const sum = Calc.summary(monthTx(), cfg(), S.month, today());
   const isToday = $('date').value === today();
-  if (!S.form.want || myr === null || !isToday || !sum.isCurrent) {
-    box.hidden = true; $('skip').hidden = true; $('save').textContent = '記録する'; return;
+  if (!S.form.want || myr === null || !isToday || !sum.isCurrent || S.form.category === INCOME) {
+    box.hidden = true; $('skip').hidden = true; $('save').textContent = S.form.category === INCOME ? '収入を記録する' : '記録する'; return;
   }
   const im = Calc.impact(sum, cfg(), myr);
   let h = im.last
@@ -905,7 +934,7 @@ function renderEatHint(myr) {
 
 // カレンダー: 各日の支出、1日の予算平均を超えた日は赤
 function renderCalendar() {
-  const tx = monthTx().filter(t => typeof t.myr === 'number' && !isFixed(t));
+  const tx = monthTx().filter(t => typeof t.myr === 'number' && !isFixed(t) && !isIncome(t));
   const byDay = {}, inBudget = {};
   tx.forEach(t => {
     byDay[t.date] = (byDay[t.date] || 0) + t.myr;
@@ -930,7 +959,7 @@ function renderCalendar() {
   if (S.selDay) {
     const items = monthTx().filter(t => t.date === S.selDay && !isFixed(t));
     h += '<div class="dayitems"><div class="calfoot" style="margin:0 0 4px"><span>' + Number(S.selDay.slice(5, 7)) + '/' + Number(S.selDay.slice(8)) + ' の明細</span><button class="linkbtn" data-close="1">閉じる</button></div>' +
-      (items.length ? items.map(t => '<div class="di"><span>' + esc(t.note || t.category) + tagsOf(t) + ' <small class="label">' + esc(subOf(t)) + '</small></span><span>' + (isHome(t) || isFree(t) ? '—' : typeof t.myr === 'number' ? Calc.rm(t.myr) : '換算待ち') + '</span></div>').join('')
+      (items.length ? items.map(t => '<div class="di"><span>' + esc(t.note || t.category) + tagsOf(t) + ' <small class="label">' + esc(subOf(t)) + '</small></span><span>' + (isHome(t) || isFree(t) ? '—' : typeof t.myr === 'number' ? money(t) : '換算待ち') + '</span></div>').join('')
         : '<div class="empty">この日の記録はありません</div>') + '</div>';
   }
   $('calendar').innerHTML = h;
@@ -948,16 +977,16 @@ function renderList() {
   tx.forEach(t => (days[t.date] = days[t.date] || []).push(t));
   const groups = Object.keys(days).map(d => {
     const list = days[d];
-    const total = Calc.sum(list.filter(t => typeof t.myr === 'number'));
+    const total = Calc.sum(list.filter(t => typeof t.myr === 'number' && !isIncome(t))), plus = -Calc.sum(list.filter(t => typeof t.myr === 'number' && isIncome(t)));
     const [, m, dd] = d.split('-');
     const wd = '日月火水木金土'[new Date(d + 'T00:00:00').getDay()];
     const isToday = d === today();
-    let g = '<div class="day' + (isToday ? ' today' : '') + '"><span>' + (isToday ? '<span class="now">今日</span>' : '') + Number(m) + '/' + Number(dd) + '(' + wd + ')</span><span class="amt2">' + Calc.rm(-total) + '</span></div>';
+    let g = '<div class="day' + (isToday ? ' today' : '') + '"><span>' + (isToday ? '<span class="now">今日</span>' : '') + Number(m) + '/' + Number(dd) + '(' + wd + ')</span><span class="amt2">' + (total || !plus ? Calc.rm(-total) : '') + (plus ? ' <span class="plus">+' + Calc.rm(plus) + '</span>' : '') + '</span></div>';
     list.forEach(t => {
       const pending = S.queue.some(q => q.id === t.id);
       const sub = subOf(t) + (t.trip ? ' ・' + t.trip : '');
-      const orig = t.currency && t.currency !== 'MYR' ? '<small>' + esc(t.currency) + ' ' + Number(t.amount).toLocaleString() + '</small>' : '';
-      const myr = isHome(t) || isFree(t) ? '—' : typeof t.myr === 'number' ? Calc.rm(t.myr) + (t.currency === 'JPY' ? '' : jp(t.myr)) : '換算待ち';
+      const orig = t.currency && t.currency !== 'MYR' ? '<small>' + esc(t.currency) + ' ' + (isIncome(t) ? '+' : '') + Math.abs(Number(t.amount)).toLocaleString() + '</small>' : '';
+      const myr = isHome(t) || isFree(t) ? '—' : typeof t.myr === 'number' ? money(t) + (t.currency === 'JPY' ? '' : jp(t.myr)) : '換算待ち';
       g += '<div class="item" data-id="' + esc(t.id) + '"><div class="what">' + esc(t.note || t.category) + tagsOf(t) +
         '<small>' + esc(sub) + (pending ? ' ・未送信' : '') + '</small></div>' +
         '<div class="amt">' + myr + orig + '</div>' +
@@ -1055,7 +1084,7 @@ function renderOutlook() {
   if (monthly > 0 && o.now > 0) { const d = new Date(); d.setDate(d.getDate() + Math.floor(o.now / monthly * 365 / 12)); dry = 'このペース+家賃だと ' + d.getFullYear() + '年' + (d.getMonth() + 1) + '月ごろ尽きる'; }
   const open = store.get('kb-outlook-open', false);
   box.classList.toggle('open', open);
-  let h = '<div class="row2"><span>今の残高<small>' + (dry || '記録した支出を引いた計算上の額') + '</small></span><span>' + val(o.now) + '</span></div>' +
+  let h = '<div class="row2"><span>今の残高<small>' + (dry || '記録した支出を引き、収入を足した計算上の額') + '</small></span><span>' + val(o.now) + '</span></div>' +
     '<button type="button" class="more-btn" id="olToggle">' + (open ? '▲ 見通しを閉じる' : '▼ ' + Number(em) + '/' + Number(ed) + 'までの見通しを見る') + '</button><div class="ol-more">' +
     '<h2 style="margin-top:12px">' + Number(em) + '/' + Number(ed) + 'までの見通し</h2><div class="label">あと' + o.daysLeft + '日' + (o.months ? '・これから払う家賃 ' + Calc.rm(o.rent) + '×' + o.months + 'か月を引いたあと' : '') + '</div>' +
     '<div class="row2"><span>今月のペースのまま<small>1日 ' + Calc.rm(o.pace) + '</small></span><span>' + val(o.atPace) + '</span></div>' +
@@ -1284,6 +1313,18 @@ function renderRides() {
   box.innerHTML = h;
 }
 
+// ---- 分析タブ: この月の収入(給料・返金・立て替え戻りなど) ----
+function renderIncome() {
+  const box = $('incomeBox');
+  const inc = monthTx().filter(isIncome);
+  let h = '<h2>' + Number(S.month.slice(5)) + '月の収入</h2>';
+  if (!inc.length) { box.innerHTML = h + '<div class="empty">' + (S.loading ? '読み込み中…' : 'この月の収入の記録はまだありません。入力タブの「収入(+)」から記録できます') + '</div>'; return; }
+  const ok = inc.filter(t => typeof t.myr === 'number'), all = -Calc.sum(ok);
+  h += '<div class="big" style="color:var(--accent)">+' + Calc.rm(all) + '</div>' + (ok.length < inc.length ? '<div class="label">換算待ち ' + (inc.length - ok.length) + '件は入っていません</div>' : '');
+  h += INCOME_KINDS.map(k => { const v = ok.filter(t => (INCOME_KINDS.includes(t.howEat) ? t.howEat : 'その他') === k); return v.length ? '<div class="row2"><span>' + k + '<small>' + v.map(t => Number(t.date.slice(5, 7)) + '/' + Number(t.date.slice(8)) + ' ' + esc(t.note || k)).join('、') + '</small></span><b>+' + Calc.rm(-Calc.sum(v)) + '</b></div>' : ''; }).join('');
+  box.innerHTML = h;
+}
+
 // 家で食べたときのお祝い
 function celebrate(title, sub) {
   document.querySelectorAll('.cele').forEach(x => x.remove());
@@ -1307,7 +1348,7 @@ function setTab(t) {
   if (t === 'ana') closePad();
 }
 
-function render() { renderHero(); renderForm(); renderCalendar(); renderFood(); renderRides(); renderAdvice(); renderOutlook(); renderFixed(); renderList(); renderStatus(); }
+function render() { renderHero(); renderForm(); renderCalendar(); renderFood(); renderRides(); renderIncome(); renderAdvice(); renderOutlook(); renderFixed(); renderList(); renderStatus(); }
 
 // ---- 読み込みと送信 ----
 async function load() {
@@ -1361,6 +1402,7 @@ function save() {
   let cur = $('currency').value;
   if (cur === 'その他') { cur = (prompt('通貨コード(例: HKD, KRW)') || '').trim().toUpperCase(); if (!/^[A-Z]{3}$/.test(cur)) return; }
   const f = S.form;
+  if (f.category === INCOME) return saveIncome(a, cur);
   const t = { id: 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: $('date').value || today(),
     amount: a, currency: cur, category: f.category, want: f.category === '食費' ? !MEALS.includes(f.howEat) : f.want, note: $('note').value.trim(),
     trip: S.settings.tripTag || '', howEat: f.category === '食費' || f.category === '交通費' ? f.howEat : '', myr: cur === 'MYR' ? a : null };
@@ -1368,6 +1410,18 @@ function save() {
   resetForm();
   const m = mealMark(t), l = mealLines();
   toast((m === 'good' ? '👍 お得なごはん! ' : '記録しました ') + (cur === 'MYR' ? Calc.rm(a) : cur + ' ' + a) + (m === 'pricey' ? '(割高: ' + Calc.rm(l.high) + '超え)' : ''));
+  render(); flush();
+}
+
+// 収入・返金など: 金額をマイナスにして区分「収入」で送る(残高に足される)。記録したら支出に戻す
+function saveIncome(a, cur) {
+  const k = S.form.howEat || 'その他';
+  const t = { id: 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: $('date').value || today(),
+    amount: -a, currency: cur, category: INCOME, want: false, note: $('note').value.trim() || k, trip: '', howEat: k, myr: cur === 'MYR' ? -a : null };
+  S.queue.push(t); S.listPage = 0; store.set('kb-queue', S.queue);
+  resetForm();
+  S.form.category = S.form.prevCat || '食費';
+  toast('💰 収入 +' + (cur === 'MYR' ? Calc.rm(a) : cur + ' ' + a) + ' を記録しました');
   render(); flush();
 }
 
@@ -1404,6 +1458,16 @@ function resetForm() {
 
 // ---- 操作 ----
 $('cats').addEventListener('click', e => { const c = e.target.dataset.cat; if (!c) return; if (c !== S.form.category) { S.form.howEat = ''; S.form.want = false; } S.form.category = c; renderForm(); });
+$('io').addEventListener('click', e => {
+  const b = e.target.closest('[data-io]'); if (!b) return;
+  const inc = b.dataset.io === 'in';
+  if (inc === (S.form.category === INCOME)) return;
+  if (inc) S.form.prevCat = S.form.category;
+  S.form.category = inc ? INCOME : S.form.prevCat || '食費';
+  S.form.howEat = ''; S.form.want = false;
+  renderForm();
+});
+$('incKinds').addEventListener('click', e => { const v = e.target.dataset.inc; if (!v) return; S.form.howEat = S.form.howEat === v ? '' : v; renderForm(); });
 $('rides').addEventListener('click', e => { const v = e.target.dataset.ride; if (!v) return; S.form.howEat = S.form.howEat === v ? '' : v; renderForm(); });
 $('eatKinds').addEventListener('click', e => { const v = e.target.dataset.eat; if (!v) return; S.form.howEat = S.form.howEat === v ? '' : v; S.form.want = !!S.form.howEat && !MEALS.includes(S.form.howEat); renderForm(); });
 $('home').addEventListener('click', saveHome);
@@ -1458,7 +1522,7 @@ $('fixed').addEventListener('click', e => {
 $('fxSave').addEventListener('click', saveFixed);
 async function delTx(id) {
   const t = monthTx().find(x => x.id === id);
-  if (!confirm((t.note || t.category) + ' ' + (t.myr != null ? Calc.rm(t.myr) : '') + ' を削除しますか?')) return false;
+  if (!confirm((t.note || t.category) + ' ' + (t.myr != null ? (isIncome(t) ? '+' + Calc.rm(-t.myr) : Calc.rm(t.myr)) : '') + ' を削除しますか?')) return false;
   if (S.queue.some(q => q.id === id)) { S.queue = S.queue.filter(q => q.id !== id); store.set('kb-queue', S.queue); render(); return true; }
   try { await call('deleteTx', id); sinceAdjust(t, -1); S.tx = S.tx.filter(x => x.id !== id); store.set('kb-month-' + S.month, { tx: S.tx }); render(); return true; }
   catch (err) { toast('削除できませんでした。電波を確認してください'); return false; }
@@ -1470,13 +1534,13 @@ function openEdit(id) {
   const t = monthTx().find(x => x.id === id);
   if (!t) return;
   const k = foodKind(t);
-  S.ed = { src: t, category: t.category, howEat: FOOD_KINDS.concat(ZERO_KINDS).includes(k) ? k : rideKind(t), want: !!t.want };
+  S.ed = { src: t, category: t.category, howEat: isIncome(t) ? (INCOME_KINDS.includes(t.howEat) ? t.howEat : 'その他') : FOOD_KINDS.concat(ZERO_KINDS).includes(k) ? k : rideKind(t), want: !!t.want };
   const cur = $('edCurrency');
   cur.innerHTML = '';
   CURRENCIES.concat(CURRENCIES.includes(t.currency) || !t.currency ? [] : [t.currency]).forEach(c => cur.add(new Option(c, c)));
   cur.value = t.currency || 'MYR';
   PADS.ed.k = newK();
-  if (t.amount > 0) PADS.ed.k.cur = String(Math.round(t.amount * Math.pow(10, decOf(PADS.ed))));
+  if (Math.abs(t.amount) > 0) PADS.ed.k.cur = String(Math.round(Math.abs(t.amount) * Math.pow(10, decOf(PADS.ed))));
   $('edNote').value = t.note || ''; $('edMemo').value = t.memo || ''; $('edDate').value = t.date;
   $('edErr').textContent = ''; $('edSave').disabled = false;
   $('edit').hidden = false; document.body.classList.add('editing');
@@ -1486,14 +1550,17 @@ function closeEdit() { closePad(); $('edit').hidden = true; document.body.classL
 function renderEdit() {
   const e = S.ed; if (!e) return;
   const s = S.settings, food = e.category === '食費', fixed = FIXED.includes(e.category);
-  const cats = s.categories.concat((s.excluded || []).filter(c => !s.categories.includes(c))).filter(c => !FIXED.includes(c)).concat(FX_CATS);
+  const inc = e.category === INCOME;
+  const cats = s.categories.concat((s.excluded || []).filter(c => !s.categories.includes(c))).filter(c => !FIXED.includes(c) && c !== INCOME).concat(FX_CATS, [INCOME]);
   if (!cats.includes(e.category)) cats.push(e.category);
   $('edCats').innerHTML = cats.map(c => '<button type="button" class="chip' + (c === e.category ? ' on' : '') + '" data-cat="' + esc(c) + '">' + esc(c) + '</button>').join('');
   $('edEats').hidden = !food;
   $('edKinds').innerHTML = FOOD_KINDS.concat(ZERO_KINDS).map(k => '<button type="button" class="chip' + (MEALS.includes(k) || ZERO_KINDS.includes(k) ? '' : ' want') + (k === e.howEat ? ' on' : '') + '" data-eat="' + k + '">' + (k === HOME ? '🏠 家ごはん' : k === FREE ? '🎁 食費なし' : k) + '</button>').join('');
   $('edRideBox').hidden = e.category !== '交通費';
+  $('edIncBox').hidden = !inc;
+  $('edInc').innerHTML = INCOME_KINDS.map(k => '<button type="button" class="chip' + (k === e.howEat ? ' on' : '') + '" data-inc="' + k + '">' + k + '</button>').join('');
   $('edRides').innerHTML = RIDES.map(r => '<button type="button" class="chip' + (r === e.howEat ? ' on' : '') + '" data-ride="' + r + '">' + r + '</button>').join('');
-  $('edNeed').hidden = food || fixed;
+  $('edNeed').hidden = food || fixed || inc;
   $('edNeed').querySelectorAll('button').forEach(b => b.classList.toggle('on', (b.dataset.need === '1') === e.want));
   // 家ごはん・食費なしは金額なし
   const zero = food && ZERO_KINDS.includes(e.howEat);
@@ -1509,14 +1576,15 @@ async function saveEdit() {
   if (!zero && !(a > 0)) return;
   let cur = zero ? 'MYR' : $('edCurrency').value;
   if (cur === 'その他') { cur = (prompt('通貨コード(例: HKD, KRW)') || '').trim().toUpperCase(); if (!/^[A-Z]{3}$/.test(cur)) return; }
-  const t = Object.assign({}, t0, { amount: a, currency: cur, category: e.category, date: $('edDate').value || t0.date,
-    note: $('edNote').value.trim(), memo: $('edMemo').value.trim(), howEat: food || e.category === '交通費' ? e.howEat : '',
-    want: food ? !!e.howEat && !isMealKind(e.howEat) && !zero : FIXED.includes(e.category) ? false : e.want });
+  const inc = e.category === INCOME, sa = inc ? -a : a;   // 収入は金額マイナスで保存
+  const t = Object.assign({}, t0, { amount: sa, currency: cur, category: e.category, date: $('edDate').value || t0.date,
+    note: $('edNote').value.trim(), memo: $('edMemo').value.trim(), howEat: food || inc || e.category === '交通費' ? e.howEat : '',
+    want: food ? !!e.howEat && !isMealKind(e.howEat) && !zero : FIXED.includes(e.category) || inc ? false : e.want });
   // まだ送っていない記録は、端末の中で直すだけ
   const qi = S.queue.findIndex(q => q.id === t.id);
   if (qi >= 0) {
     if (flush.busy && qi === 0) { $('edErr').textContent = 'いま送信中です。少し待ってからもう一度押してください'; return; }
-    t.myr = cur === 'MYR' ? a : null; S.queue[qi] = t; store.set('kb-queue', S.queue);
+    t.myr = cur === 'MYR' ? sa : null; S.queue[qi] = t; store.set('kb-queue', S.queue);
     closeEdit(); toast('直しました'); render(); flush(); return;
   }
   $('edSave').disabled = true; $('edErr').textContent = '保存しています…';
@@ -1548,12 +1616,13 @@ $('edAmount').addEventListener('click', () => togglePad(PADS.ed));
 $('edCurrency').addEventListener('input', () => renderEdit());
 $('edCats').addEventListener('click', e => {
   const c = e.target.dataset.cat; if (!c) return;
-  if (c !== S.ed.category) S.ed.howEat = c === '交通費' ? 'その他' : '';
+  if (c !== S.ed.category) S.ed.howEat = c === '交通費' || c === INCOME ? 'その他' : '';
   S.ed.category = c;
   if (FIXED.includes(c)) S.ed.want = false;
   renderEdit();
 });
 $('edKinds').addEventListener('click', e => { const k = e.target.closest('[data-eat]'); if (!k) return; S.ed.howEat = k.dataset.eat; renderEdit(); });
+$('edInc').addEventListener('click', e => { const r = e.target.closest('[data-inc]'); if (!r) return; S.ed.howEat = r.dataset.inc; renderEdit(); });
 $('edRides').addEventListener('click', e => { const r = e.target.closest('[data-ride]'); if (!r) return; S.ed.howEat = r.dataset.ride; renderEdit(); });
 $('edNeed').addEventListener('click', e => { const b = e.target.closest('[data-need]'); if (!b) return; S.ed.want = b.dataset.need === '1'; renderEdit(); });
 $('edSave').addEventListener('click', saveEdit);
