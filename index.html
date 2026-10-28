@@ -398,6 +398,7 @@
       <div class="sublabel">区分</div>
       <div class="chips" id="edCats"></div>
       <div id="edEats"><div class="sublabel">食費の種類</div><div class="chips" id="edKinds"></div></div>
+      <div id="edRideBox" hidden><div class="sublabel">交通費の種類</div><div class="chips" id="edRides"></div></div>
       <div class="chips" id="edNeed">
         <button class="chip" type="button" data-need="0">必要</button>
         <button class="chip want" type="button" data-need="1">欲しい</button>
@@ -1469,7 +1470,7 @@ function openEdit(id) {
   const t = monthTx().find(x => x.id === id);
   if (!t) return;
   const k = foodKind(t);
-  S.ed = { src: t, category: t.category, howEat: FOOD_KINDS.concat(ZERO_KINDS).includes(k) ? k : '', want: !!t.want };
+  S.ed = { src: t, category: t.category, howEat: FOOD_KINDS.concat(ZERO_KINDS).includes(k) ? k : rideKind(t), want: !!t.want };
   const cur = $('edCurrency');
   cur.innerHTML = '';
   CURRENCIES.concat(CURRENCIES.includes(t.currency) || !t.currency ? [] : [t.currency]).forEach(c => cur.add(new Option(c, c)));
@@ -1490,6 +1491,8 @@ function renderEdit() {
   $('edCats').innerHTML = cats.map(c => '<button type="button" class="chip' + (c === e.category ? ' on' : '') + '" data-cat="' + esc(c) + '">' + esc(c) + '</button>').join('');
   $('edEats').hidden = !food;
   $('edKinds').innerHTML = FOOD_KINDS.concat(ZERO_KINDS).map(k => '<button type="button" class="chip' + (MEALS.includes(k) || ZERO_KINDS.includes(k) ? '' : ' want') + (k === e.howEat ? ' on' : '') + '" data-eat="' + k + '">' + (k === HOME ? '🏠 家ごはん' : k === FREE ? '🎁 食費なし' : k) + '</button>').join('');
+  $('edRideBox').hidden = e.category !== '交通費';
+  $('edRides').innerHTML = RIDES.map(r => '<button type="button" class="chip' + (r === e.howEat ? ' on' : '') + '" data-ride="' + r + '">' + r + '</button>').join('');
   $('edNeed').hidden = food || fixed;
   $('edNeed').querySelectorAll('button').forEach(b => b.classList.toggle('on', (b.dataset.need === '1') === e.want));
   // 家ごはん・食費なしは金額なし
@@ -1507,7 +1510,7 @@ async function saveEdit() {
   let cur = zero ? 'MYR' : $('edCurrency').value;
   if (cur === 'その他') { cur = (prompt('通貨コード(例: HKD, KRW)') || '').trim().toUpperCase(); if (!/^[A-Z]{3}$/.test(cur)) return; }
   const t = Object.assign({}, t0, { amount: a, currency: cur, category: e.category, date: $('edDate').value || t0.date,
-    note: $('edNote').value.trim(), memo: $('edMemo').value.trim(), howEat: food ? e.howEat : '',
+    note: $('edNote').value.trim(), memo: $('edMemo').value.trim(), howEat: food || e.category === '交通費' ? e.howEat : '',
     want: food ? !!e.howEat && !isMealKind(e.howEat) && !zero : FIXED.includes(e.category) ? false : e.want });
   // まだ送っていない記録は、端末の中で直すだけ
   const qi = S.queue.findIndex(q => q.id === t.id);
@@ -1545,12 +1548,13 @@ $('edAmount').addEventListener('click', () => togglePad(PADS.ed));
 $('edCurrency').addEventListener('input', () => renderEdit());
 $('edCats').addEventListener('click', e => {
   const c = e.target.dataset.cat; if (!c) return;
+  if (c !== S.ed.category) S.ed.howEat = c === '交通費' ? 'その他' : '';
   S.ed.category = c;
-  if (c !== '食費') S.ed.howEat = '';
   if (FIXED.includes(c)) S.ed.want = false;
   renderEdit();
 });
 $('edKinds').addEventListener('click', e => { const k = e.target.closest('[data-eat]'); if (!k) return; S.ed.howEat = k.dataset.eat; renderEdit(); });
+$('edRides').addEventListener('click', e => { const r = e.target.closest('[data-ride]'); if (!r) return; S.ed.howEat = r.dataset.ride; renderEdit(); });
 $('edNeed').addEventListener('click', e => { const b = e.target.closest('[data-need]'); if (!b) return; S.ed.want = b.dataset.need === '1'; renderEdit(); });
 $('edSave').addEventListener('click', saveEdit);
 $('edDel').addEventListener('click', async () => { if (await delTx(S.ed.src.id)) closeEdit(); });
