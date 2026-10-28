@@ -342,6 +342,7 @@
         <button class="homebtn free" id="free" type="button">🎁 食費なし<small class="label">おごりなど</small></button>
       </div>
     </div>
+    <div class="chips" id="rides" hidden></div>
     <div class="chips" id="needRow">
       <button class="chip on" id="need" type="button">必要</button>
       <button class="chip want" id="want" type="button">欲しい</button>
@@ -381,6 +382,7 @@
   <section class="card" id="list"></section>
   </div>
   <section class="card food only-ana" id="food"></section>
+  <section class="card food only-ana" id="ridesBox"></section>
   <div class="pair only-ana">
   <section class="card" id="calendar"></section>
   <section class="card advice" id="advice"></section>
@@ -396,6 +398,7 @@
       <div class="sublabel">区分</div>
       <div class="chips" id="edCats"></div>
       <div id="edEats"><div class="sublabel">食費の種類</div><div class="chips" id="edKinds"></div></div>
+      <div id="edRideBox" hidden><div class="sublabel">交通費の種類</div><div class="chips" id="edRides"></div></div>
       <div class="chips" id="edNeed">
         <button class="chip" type="button" data-need="0">必要</button>
         <button class="chip want" type="button" data-need="1">欲しい</button>
@@ -560,7 +563,17 @@ function tagsOf(t) {
   return (t.category === '食費' ? (isExtraFood(t) ? '<span class="tag">控えたい食費</span>' : '') : t.want ? '<span class="tag">欲しい</span>' : '') +
     (m === 'pricey' ? '<span class="tag bad">割高</span>' : m === 'good' ? '<span class="tag good">👍 お得</span>' : m === 'home' ? '<span class="tag good">🏠 家ごはん</span>' : m === 'free' ? '<span class="tag">🎁 食費なし</span>' : '');
 }
-const subOf = t => [t.category, foodKind(t) || t.howEat].filter(Boolean).join('・');
+// ---- 交通費の種類: 公共交通機関・Grab・その他(食べ方の欄に入れる)。前の記録は名前から見分ける ----
+const RIDES = ['公共交通機関', 'Grab', 'その他'];
+const TRAIN_RE = /電車|MRT|LRT|KTM|モノレール|バス|🚃|🚇|🚆|🚌|train|bus/i;
+const GRAB_RE = /grab|グラブ|車|タクシー|🚗|🚕|taxi/i;
+function rideKind(t) {
+  if (t.category !== '交通費') return '';
+  if (RIDES.includes(t.howEat)) return t.howEat;
+  const n = String(t.note || '');
+  return TRAIN_RE.test(n) ? '公共交通機関' : GRAB_RE.test(n) ? 'Grab' : 'その他';
+}
+const subOf = t => [t.category, foodKind(t) || rideKind(t) || t.howEat].filter(Boolean).join('・');
 const CURRENCIES = ['MYR', 'JPY', 'SGD', 'THB', 'BDT', 'USD', 'その他'];
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -802,6 +815,8 @@ function renderForm() {
   $('eats').hidden = f.category !== '食費';
   $('needRow').hidden = f.category === '食費';
   $('eatKinds').innerHTML = FOOD_KINDS.map(e => '<button type="button" class="chip' + (MEALS.includes(e) ? '' : ' want') + (e === f.howEat ? ' on' : '') + '" data-eat="' + e + '">' + e + '</button>').join('');
+  $('rides').hidden = f.category !== '交通費';
+  $('rides').innerHTML = RIDES.map(r => '<button type="button" class="chip' + (r === f.howEat ? ' on' : '') + '" data-ride="' + r + '">' + r + '</button>').join('');
   $('need').classList.toggle('on', !f.want);
   $('want').classList.toggle('on', f.want);
   if (!$('date').value) $('date').value = S.cont ? S.cont.date : today();
@@ -1254,6 +1269,21 @@ function renderFood() {
   box.innerHTML = h;
 }
 
+// ---- 分析タブ: 交通費の種類ごと ----
+function renderRides() {
+  const box = $('ridesBox'), td = today();
+  const tr = monthTx().filter(t => t.category === '交通費' && typeof t.myr === 'number' && Calc.counts(t, S.settings) && t.date <= td);
+  let h = '<h2>交通費の内訳</h2>';
+  if (!tr.length) { box.innerHTML = h + '<div class="empty">' + (S.loading ? '読み込み中…' : 'この月の交通費の記録はまだありません') + '</div>'; return; }
+  const all = Calc.sum(tr), col = { '公共交通機関': 'var(--c-trans)', 'Grab': 'var(--warn)', 'その他': 'var(--c-other)' };
+  const by = RIDES.map(k => { const v = tr.filter(t => rideKind(t) === k); return { k, v, sum: Calc.sum(v) }; }).filter(x => x.v.length);
+  h += '<div class="label">' + Number(S.month.slice(5)) + '月の交通費</div><div class="big" style="color:var(--c-trans)">' + Calc.rm(all) + '</div>';
+  if (all) h += '<div class="fbar" role="img" aria-label="交通費の種類の割合">' + by.map(x => '<span style="width:' + (x.sum / all * 100).toFixed(1) + '%;background:' + col[x.k] + '"></span>').join('') + '</div>' +
+    '<div class="legend">' + by.map(x => '<span><span class="sw" style="background:' + col[x.k] + '"></span>' + x.k + ' <b>' + Calc.rm(x.sum) + '</b></span>').join('') + '</div>';
+  h += by.map(x => '<div class="row2"><span>' + x.k + '<small>' + x.v.length + '回・1回平均 ' + Calc.rm(Math.round(x.sum / x.v.length * 100) / 100) + (all ? '・' + Math.round(x.sum / all * 100) + '%' : '') + '</small></span><b>' + Calc.rm(x.sum) + '</b></div>').join('');
+  box.innerHTML = h;
+}
+
 // 家で食べたときのお祝い
 function celebrate(title, sub) {
   document.querySelectorAll('.cele').forEach(x => x.remove());
@@ -1277,7 +1307,7 @@ function setTab(t) {
   if (t === 'ana') closePad();
 }
 
-function render() { renderHero(); renderForm(); renderCalendar(); renderFood(); renderAdvice(); renderOutlook(); renderFixed(); renderList(); renderStatus(); }
+function render() { renderHero(); renderForm(); renderCalendar(); renderFood(); renderRides(); renderAdvice(); renderOutlook(); renderFixed(); renderList(); renderStatus(); }
 
 // ---- 読み込みと送信 ----
 async function load() {
@@ -1333,7 +1363,7 @@ function save() {
   const f = S.form;
   const t = { id: 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: $('date').value || today(),
     amount: a, currency: cur, category: f.category, want: f.category === '食費' ? !MEALS.includes(f.howEat) : f.want, note: $('note').value.trim(),
-    trip: S.settings.tripTag || '', howEat: f.category === '食費' ? f.howEat : '', myr: cur === 'MYR' ? a : null };
+    trip: S.settings.tripTag || '', howEat: f.category === '食費' || f.category === '交通費' ? f.howEat : '', myr: cur === 'MYR' ? a : null };
   S.queue.push(t); S.listPage = 0; store.set('kb-queue', S.queue);
   resetForm();
   const m = mealMark(t), l = mealLines();
@@ -1373,7 +1403,8 @@ function resetForm() {
 }
 
 // ---- 操作 ----
-$('cats').addEventListener('click', e => { const c = e.target.dataset.cat; if (!c) return; S.form.category = c; if (c !== '食費') { S.form.howEat = ''; S.form.want = false; } renderForm(); });
+$('cats').addEventListener('click', e => { const c = e.target.dataset.cat; if (!c) return; if (c !== S.form.category) { S.form.howEat = ''; S.form.want = false; } S.form.category = c; renderForm(); });
+$('rides').addEventListener('click', e => { const v = e.target.dataset.ride; if (!v) return; S.form.howEat = S.form.howEat === v ? '' : v; renderForm(); });
 $('eatKinds').addEventListener('click', e => { const v = e.target.dataset.eat; if (!v) return; S.form.howEat = S.form.howEat === v ? '' : v; S.form.want = !!S.form.howEat && !MEALS.includes(S.form.howEat); renderForm(); });
 $('home').addEventListener('click', saveHome);
 $('free').addEventListener('click', saveFree);
@@ -1439,7 +1470,7 @@ function openEdit(id) {
   const t = monthTx().find(x => x.id === id);
   if (!t) return;
   const k = foodKind(t);
-  S.ed = { src: t, category: t.category, howEat: FOOD_KINDS.concat(ZERO_KINDS).includes(k) ? k : '', want: !!t.want };
+  S.ed = { src: t, category: t.category, howEat: FOOD_KINDS.concat(ZERO_KINDS).includes(k) ? k : rideKind(t), want: !!t.want };
   const cur = $('edCurrency');
   cur.innerHTML = '';
   CURRENCIES.concat(CURRENCIES.includes(t.currency) || !t.currency ? [] : [t.currency]).forEach(c => cur.add(new Option(c, c)));
@@ -1460,6 +1491,8 @@ function renderEdit() {
   $('edCats').innerHTML = cats.map(c => '<button type="button" class="chip' + (c === e.category ? ' on' : '') + '" data-cat="' + esc(c) + '">' + esc(c) + '</button>').join('');
   $('edEats').hidden = !food;
   $('edKinds').innerHTML = FOOD_KINDS.concat(ZERO_KINDS).map(k => '<button type="button" class="chip' + (MEALS.includes(k) || ZERO_KINDS.includes(k) ? '' : ' want') + (k === e.howEat ? ' on' : '') + '" data-eat="' + k + '">' + (k === HOME ? '🏠 家ごはん' : k === FREE ? '🎁 食費なし' : k) + '</button>').join('');
+  $('edRideBox').hidden = e.category !== '交通費';
+  $('edRides').innerHTML = RIDES.map(r => '<button type="button" class="chip' + (r === e.howEat ? ' on' : '') + '" data-ride="' + r + '">' + r + '</button>').join('');
   $('edNeed').hidden = food || fixed;
   $('edNeed').querySelectorAll('button').forEach(b => b.classList.toggle('on', (b.dataset.need === '1') === e.want));
   // 家ごはん・食費なしは金額なし
@@ -1477,7 +1510,7 @@ async function saveEdit() {
   let cur = zero ? 'MYR' : $('edCurrency').value;
   if (cur === 'その他') { cur = (prompt('通貨コード(例: HKD, KRW)') || '').trim().toUpperCase(); if (!/^[A-Z]{3}$/.test(cur)) return; }
   const t = Object.assign({}, t0, { amount: a, currency: cur, category: e.category, date: $('edDate').value || t0.date,
-    note: $('edNote').value.trim(), memo: $('edMemo').value.trim(), howEat: food ? e.howEat : '',
+    note: $('edNote').value.trim(), memo: $('edMemo').value.trim(), howEat: food || e.category === '交通費' ? e.howEat : '',
     want: food ? !!e.howEat && !isMealKind(e.howEat) && !zero : FIXED.includes(e.category) ? false : e.want });
   // まだ送っていない記録は、端末の中で直すだけ
   const qi = S.queue.findIndex(q => q.id === t.id);
@@ -1515,12 +1548,13 @@ $('edAmount').addEventListener('click', () => togglePad(PADS.ed));
 $('edCurrency').addEventListener('input', () => renderEdit());
 $('edCats').addEventListener('click', e => {
   const c = e.target.dataset.cat; if (!c) return;
+  if (c !== S.ed.category) S.ed.howEat = c === '交通費' ? 'その他' : '';
   S.ed.category = c;
-  if (c !== '食費') S.ed.howEat = '';
   if (FIXED.includes(c)) S.ed.want = false;
   renderEdit();
 });
 $('edKinds').addEventListener('click', e => { const k = e.target.closest('[data-eat]'); if (!k) return; S.ed.howEat = k.dataset.eat; renderEdit(); });
+$('edRides').addEventListener('click', e => { const r = e.target.closest('[data-ride]'); if (!r) return; S.ed.howEat = r.dataset.ride; renderEdit(); });
 $('edNeed').addEventListener('click', e => { const b = e.target.closest('[data-need]'); if (!b) return; S.ed.want = b.dataset.need === '1'; renderEdit(); });
 $('edSave').addEventListener('click', saveEdit);
 $('edDel').addEventListener('click', async () => { if (await delTx(S.ed.src.id)) closeEdit(); });
