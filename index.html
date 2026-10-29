@@ -306,6 +306,7 @@
   .trend .tip .g b { font-size: 17px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .trend .tip .bad { color: var(--bad); } .trend .tip .ok { color: var(--accent); }
   .trend svg { touch-action: pan-y; }
+  .trend .sub { font-size: 13px; font-weight: 600; color: var(--quiet); margin: 16px 0 0; }
   .trend .lg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--quiet); margin-top: 6px; }
   .trend .lg i { display: inline-block; width: 14px; height: 0; border-top: 2.5px solid; vertical-align: middle; margin-right: 5px; }
   .trend .lg i.bx { height: 9px; width: 9px; border: 0; border-radius: 2px; }
@@ -1368,16 +1369,30 @@ function renderTrend() {
   const cum = []; let run = 0;
   for (let d = 1; d <= upto; d++) { run += day[d]; cum.push(run); }
   const budget = s.budget || 0, line = budget / dim;
-  const maxY = Math.max(budget, run, ...day) * 1.08 || 1;
+  const maxY = Math.max(budget, run) * 1.08 || 1;
   const W = Math.max(280, Math.min((box.clientWidth || 372) - 32, 900)), H = W > 500 ? 200 : 170, L = 38, R = 8, T = 8, B = 20, pw = W - L - R, ph = H - T - B;
   const x = d => L + (d - 0.5) / dim * pw, y = v => T + ph - v / maxY * ph;
   const step = maxY > 1500 ? 500 : maxY > 600 ? 200 : maxY > 250 ? 100 : 50;
   let g = '';
   for (let v = 0; v <= maxY; v += step) g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '" stroke="var(--line)" stroke-width="1"/><text x="' + (L - 5) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + v + '</text>';
   [1, 5, 10, 15, 20, 25, dim].forEach(d => { g += '<text x="' + x(d).toFixed(1) + '" y="' + (H - 5) + '" text-anchor="middle">' + d + '</text>'; });
-  // 日ごとの支出(棒)。1日の予算を超えた日は赤
+  // 日ごとの支出(棒)は下の別グラフに、棒だけの目盛りで
+  const BH = W > 500 ? 140 : 120, BT = 18, bph = BH - BT - B;
+  // 飛びぬけて大きい日に合わせると他の日が見えなくなるので、上を切って金額を書く
+  const nz = day.slice(1, upto + 1).filter(v => v > 0).sort((a, b) => a - b);
+  const p85 = nz.length ? nz[Math.floor((nz.length - 1) * 0.85)] : 0;
+  const bMax = Math.min(Math.max(...day), Math.max(line * 2, p85 * 1.6)) * 1.1 || 1;
+  const by = v => BT + bph - Math.min(v, bMax) / bMax * bph;
+  const bstep = [10, 20, 25, 50, 100, 200, 250, 500, 1000].find(st => bMax / st <= 4) || 1000;
+  let gb = '';
+  for (let v = 0; v <= bMax; v += bstep) gb += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + by(v).toFixed(1) + '" y2="' + by(v).toFixed(1) + '" stroke="var(--line)" stroke-width="1"/><text x="' + (L - 5) + '" y="' + (by(v) + 3.5).toFixed(1) + '" text-anchor="end">' + v + '</text>';
+  [1, 5, 10, 15, 20, 25, dim].forEach(d => { gb += '<text x="' + x(d).toFixed(1) + '" y="' + (BH - 5) + '" text-anchor="middle">' + d + '</text>'; });
   const bw = Math.max(pw / dim - 2, 2);
-  for (let d = 1; d <= upto; d++) if (day[d] > 0) g += '<rect x="' + (x(d) - bw / 2).toFixed(1) + '" y="' + y(day[d]).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (y(0) - y(day[d])).toFixed(1) + '" rx="1.5" fill="' + (line && day[d] > line ? 'var(--bad)' : 'var(--quiet)') + '" opacity=".28"/>';
+  for (let d = 1; d <= upto; d++) if (day[d] > 0) gb += '<rect x="' + (x(d) - bw / 2).toFixed(1) + '" y="' + by(day[d]).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (by(0) - by(day[d])).toFixed(1) + '" rx="2" fill="' + (line && day[d] > line ? 'var(--bad)' : 'var(--quiet)') + '" opacity="' + (line && day[d] > line ? '.75' : '.45') + '"/>';
+  if (line) gb += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + by(line).toFixed(1) + '" y2="' + by(line).toFixed(1) + '" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 3"/>';
+  for (let d = 1; d <= upto; d++) if (day[d] > bMax) gb += '<path d="M' + (x(d) - bw / 2 - 1).toFixed(1) + ' ' + (BT + 7) + 'l' + (bw / 2 + 1).toFixed(1) + ' -3l' + (bw / 2 + 1).toFixed(1) + ' 3" stroke="var(--card)" stroke-width="2.5" fill="none"/><text x="' + x(d).toFixed(1) + '" y="' + (BT - 5) + '" text-anchor="middle" style="fill:var(--bad);font-weight:700">' + Math.round(day[d]) + '</text>';
+  gb += '<line id="trGuide2" y1="' + BT + '" y2="' + by(0).toFixed(1) + '" stroke="var(--ink)" stroke-width="1" opacity=".35"/>';
+  gb += '<rect x="' + L + '" y="0" width="' + pw + '" height="' + BH + '" fill="transparent" style="cursor:pointer"/>';
   // 予算どおりのペース(点線)
   if (budget) g += '<line x1="' + x(0.5).toFixed(1) + '" y1="' + y(0).toFixed(1) + '" x2="' + x(dim).toFixed(1) + '" y2="' + y(budget).toFixed(1) + '" stroke="var(--quiet)" stroke-width="1.5" stroke-dasharray="4 3"/>';
   // 累計(折れ線)
@@ -1393,7 +1408,9 @@ function renderTrend() {
   const diff = Math.round((run - line * upto) * 100) / 100;
   h += '<div class="label">' + (budget ? mon + '/' + upto + ' までの累計 <b>' + Calc.rm(Math.round(run * 100) / 100) + '</b>。予算どおりのペースより <b style="color:' + col + '">' + Calc.rm(Math.abs(diff)) + (diff > 0 ? ' 多い' : ' 少ない') + '</b>' : mon + '/' + upto + ' までの累計 <b>' + Calc.rm(Math.round(run * 100) / 100) + '</b>') + '</div>';
   h += '<div class="tip" id="trTip" hidden></div><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + mon + '月の支出の累計の折れ線グラフ">' + g + '</svg>';
-  h += '<div class="lg"><span><i style="border-color:' + col + '"></i>使った累計</span>' + (budget ? '<span><i style="border-top-style:dashed;border-color:var(--quiet)"></i>予算 ' + Calc.rm(budget).replace(/\.\d\d$/, '') + ' のペース</span>' : '') + '<span><i class="bx" style="background:var(--quiet);opacity:.4"></i>その日の支出(赤=1日の予算超え)</span><span>グラフにカーソルを合わせる(スマホはタップ)と、その日の数字が出ます</span></div>';
+  h += '<div class="lg"><span><i style="border-color:' + col + '"></i>使った累計</span>' + (budget ? '<span><i style="border-top-style:dashed;border-color:var(--quiet)"></i>予算 ' + Calc.rm(budget).replace(/\.\d\d$/, '') + ' のペース</span>' : '') + '</div>';
+  h += '<div class="sub">日ごとに使った金額</div><svg viewBox="0 0 ' + W + ' ' + BH + '" role="img" aria-label="' + mon + '月の日ごとの支出の棒グラフ">' + gb + '</svg>';
+  h += '<div class="lg"><span><i class="bx" style="background:var(--quiet);opacity:.5"></i>その日に使った</span><span><i class="bx" style="background:var(--bad);opacity:.75"></i>1日の予算より多い日</span>' + (line ? '<span><i style="border-top-style:dashed;border-color:var(--accent)"></i>1日の予算 ' + Calc.rm(Math.round(line * 100) / 100) + '</span>' : '') + (day.some(v => v > bMax) ? '<span>上が切れている棒は、上の数字がその日の金額</span>' : '') + '<span>グラフにカーソルを合わせる(スマホはタップ)と、その日の数字が出ます</span></div>';
   box.innerHTML = h;
   trendPick(0);
 }
@@ -1402,7 +1419,7 @@ let TR = null;
 function trendPick(d) {
   if (!TR || !$('trTip')) return;
   const tip = $('trTip'), show = d > 0;
-  tip.hidden = !show; $('trGuide').style.display = $('trDot').style.display = show ? '' : 'none';
+  tip.hidden = !show; $('trGuide').style.display = $('trDot').style.display = $('trGuide2').style.display = show ? '' : 'none';
   if (!show) return;
   d = Math.min(Math.max(d, 1), TR.upto);
   const v = TR.day[d], c = TR.cum[d - 1], p = TR.line * d, df = Math.round((c - p) * 100) / 100;
@@ -1413,7 +1430,7 @@ function trendPick(d) {
     '<div><span>' + TR.mon + '/1からの合計</span><b>' + r2(c) + '</b></div>' +
     (TR.line ? '<div><span>予算ペースより</span><b class="' + (df > 0 ? 'bad' : 'ok') + '">' + (df > 0 ? '+' : '−') + r2(Math.abs(df)) + (df > 0 ? ' 多い' : ' 少ない') + '</b></div>' : '') + '</div>';
   const gx = TR.x(d).toFixed(1);
-  $('trGuide').setAttribute('x1', gx); $('trGuide').setAttribute('x2', gx);
+  ['trGuide', 'trGuide2'].forEach(id => { $(id).setAttribute('x1', gx); $(id).setAttribute('x2', gx); });
   $('trDot').setAttribute('cx', gx); $('trDot').setAttribute('cy', TR.y(c).toFixed(1));
   // 吹き出しは点の上(入らなければ下)、左右ははみ出さないように
   const svg = $('trend').querySelector('svg'), bx = $('trend').getBoundingClientRect(), sr = svg.getBoundingClientRect(), k = sr.width / TR.W;
