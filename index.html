@@ -270,6 +270,12 @@
   .advice .verdict { margin-top: 10px; padding: 8px 10px; border-radius: 10px; font-size: 13.5px; line-height: 1.5; background: var(--card); }
   .advice .verdict.bad { background: var(--bad-soft); } .advice .verdict.ok { background: var(--card); color: var(--accent); }
   .advice table { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+  .advice .pie { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; }
+  .advice .pie svg { flex: 0 0 auto; width: 150px; height: 150px; margin: 4px auto; }
+  .advice .pie table { flex: 1 1 220px; }
+  .advice .pie .pie-k { font-size: 3px; fill: var(--quiet); text-anchor: middle; }
+  .advice .pie .pie-v { font-size: 4.6px; font-weight: 700; fill: var(--ink, currentColor); text-anchor: middle; }
+  .advice .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: 0; }
   .advice td { padding: 3px 0; } .advice td.r { text-align: right; white-space: nowrap; } .advice td.q { color: var(--quiet); width: 52px; }
   .dayitems { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 6px; font-size: 14px; }
   .dayitems .di { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
@@ -288,6 +294,12 @@
   .eathint { font-size: 13px; color: var(--quiet); margin-top: 8px; line-height: 1.5; }
   .eathint b.bad { color: var(--bad); } .eathint b.good { color: var(--accent); }
   .cal button .d .hm { font-size: 9px; margin-left: 1px; }
+  .trend h2 { font-size: 15px; margin: 0 0 4px; }
+  .trend svg { display: block; width: 100%; height: auto; margin: 6px 0 0; overflow: visible; }
+  .trend svg text { font-size: 10px; fill: var(--quiet); font-variant-numeric: tabular-nums; }
+  .trend .lg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--quiet); margin-top: 6px; }
+  .trend .lg i { display: inline-block; width: 14px; height: 0; border-top: 2.5px solid; vertical-align: middle; margin-right: 5px; }
+  .trend .lg i.bx { height: 9px; width: 9px; border: 0; border-radius: 2px; }
   .food h2 { font-size: 15px; margin: 0 0 4px; }
   .food .big { color: var(--warn); }
   .food .fbar { display: flex; gap: 2px; height: 14px; border-radius: 7px; overflow: hidden; background: var(--chip); margin: 8px 0 4px; }
@@ -396,6 +408,7 @@
   </div>
   <section class="card" id="list"></section>
   </div>
+  <section class="card trend only-ana" id="trend"></section>
   <section class="card food only-ana" id="food"></section>
   <section class="card food only-ana" id="ridesBox"></section>
   <section class="card food only-ana" id="incomeBox"></section>
@@ -1244,7 +1257,15 @@ function renderAdvice() {
   });
   if (a.over.length) h += '<details class="adv"><summary><span class="t">1日 ' + Calc.rm(Math.round(a.line * 100) / 100) + ' を超えた日: ' + a.over.length + '日</span></summary><div class="more">大きかった出費: ' + a.big + '</div></details>';
   // 区分ごとの割合
-  h += '<details class="adv"><summary><span class="t">区分ごとの割合</span></summary><div class="more"><table>' + a.cats.map(c => '<tr><td>' + esc(c.name) + '</td><td class="r">' + Calc.rm(c.sum) + '</td><td class="r q">' + Math.round(c.share * 100) + '%</td></tr>').join('') + '</table>';
+  const catCol = k => 'var(--c-' + (CAT_COLORS[k] || 'other') + ')';
+  const R = 15.9155, gap = a.cats.length > 1 ? 0.6 : 0; let off = 0;
+  const ring = a.cats.filter(c => c.sum > 0).map(c => {
+    const len = c.share * 100, seg = '<circle cx="21" cy="21" r="' + R + '" fill="none" stroke="' + catCol(c.name) + '" stroke-width="6" stroke-dasharray="' + Math.max(len - gap, 0.01).toFixed(2) + ' ' + (100 - Math.max(len - gap, 0.01)).toFixed(2) + '" stroke-dashoffset="' + (25 - off).toFixed(2) + '"><title>' + esc(c.name) + ' ' + Math.round(len) + '%</title></circle>';
+    off += len; return seg;
+  }).join('');
+  h += '<details class="adv" open><summary><span class="t">区分ごとの割合</span></summary><div class="more"><div class="pie"><svg viewBox="0 0 42 42" role="img" aria-label="区分ごとの割合の円グラフ">' + ring +
+    '<text x="21" y="20" class="pie-k">合計</text><text x="21" y="25" class="pie-v">' + Calc.rm(Math.round(a.total)).replace(/\.\d\d$/, '') + '</text></svg><table>' +
+    a.cats.map(c => '<tr><td><i class="dot" style="background:' + catCol(c.name) + '"></i>' + esc(c.name) + '</td><td class="r">' + Calc.rm(c.sum) + '</td><td class="r q">' + Math.round(c.share * 100) + '%</td></tr>').join('') + '</table></div>';
   const fe = Object.keys(a.eat);
   if (fe.length) h += '<div style="margin-top:6px">食費の内訳: ' + fe.sort((x, y) => a.eat[y].sum - a.eat[x].sum).map(k => esc(k) + ' ' + Calc.rm(Math.round(a.eat[k].sum * 100) / 100) + '(' + a.eat[k].n + '回)').join('、') + '</div>';
   h += '</div></details>';
@@ -1325,6 +1346,44 @@ function renderIncome() {
   box.innerHTML = h;
 }
 
+// 支出の折れ線グラフ: 予算に入る支出の累計と、予算どおりに使ったときの線をくらべる
+function renderTrend() {
+  const box = $('trend'), s = cfg();
+  const dim = Calc.daysIn(S.month), td = today(), mon = Number(S.month.slice(5));
+  const upto = td.slice(0, 7) === S.month ? Number(td.slice(8)) : td.slice(0, 7) > S.month ? dim : 0;
+  let h = '<h2>' + mon + '月の支出の流れ</h2>';
+  const tx = monthTx().filter(t => typeof t.myr === 'number' && Calc.counts(t, s));
+  if (!upto || !tx.length) { box.innerHTML = h + '<div class="empty">' + (S.loading ? '読み込み中…' : 'この月はまだ記録がありません') + '</div>'; return; }
+  const day = Array(dim + 1).fill(0);
+  tx.forEach(t => { const d = Number(t.date.slice(8)); if (d >= 1 && d <= dim) day[d] += t.myr; });
+  const cum = []; let run = 0;
+  for (let d = 1; d <= upto; d++) { run += day[d]; cum.push(run); }
+  const budget = s.budget || 0, line = budget / dim;
+  const maxY = Math.max(budget, run, ...day) * 1.08 || 1;
+  const W = Math.max(280, Math.min((box.clientWidth || 372) - 32, 900)), H = W > 500 ? 200 : 170, L = 38, R = 8, T = 8, B = 20, pw = W - L - R, ph = H - T - B;
+  const x = d => L + (d - 0.5) / dim * pw, y = v => T + ph - v / maxY * ph;
+  const step = maxY > 1500 ? 500 : maxY > 600 ? 200 : maxY > 250 ? 100 : 50;
+  let g = '';
+  for (let v = 0; v <= maxY; v += step) g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '" stroke="var(--line)" stroke-width="1"/><text x="' + (L - 5) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + v + '</text>';
+  [1, 5, 10, 15, 20, 25, dim].forEach(d => { g += '<text x="' + x(d).toFixed(1) + '" y="' + (H - 5) + '" text-anchor="middle">' + d + '</text>'; });
+  // 日ごとの支出(棒)。1日の予算を超えた日は赤
+  const bw = Math.max(pw / dim - 2, 2);
+  for (let d = 1; d <= upto; d++) if (day[d] > 0) g += '<rect x="' + (x(d) - bw / 2).toFixed(1) + '" y="' + y(day[d]).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (y(0) - y(day[d])).toFixed(1) + '" rx="1.5" fill="' + (line && day[d] > line ? 'var(--bad)' : 'var(--quiet)') + '" opacity=".28"><title>' + mon + '/' + d + ' ' + Calc.rm(Math.round(day[d] * 100) / 100) + '</title></rect>';
+  // 予算どおりのペース(点線)
+  if (budget) g += '<line x1="' + x(0.5).toFixed(1) + '" y1="' + y(0).toFixed(1) + '" x2="' + x(dim).toFixed(1) + '" y2="' + y(budget).toFixed(1) + '" stroke="var(--quiet)" stroke-width="1.5" stroke-dasharray="4 3"/>';
+  // 累計(折れ線)
+  const over = budget && run > line * upto;
+  const col = over ? 'var(--bad)' : 'var(--accent)';
+  const pts = cum.map((v, i) => x(i + 1).toFixed(1) + ',' + y(v).toFixed(1));
+  g += '<polyline points="' + x(0.5).toFixed(1) + ',' + y(0).toFixed(1) + ' ' + pts.join(' ') + '" fill="none" stroke="' + col + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+  g += '<circle cx="' + x(upto).toFixed(1) + '" cy="' + y(run).toFixed(1) + '" r="3.5" fill="' + col + '"/>';
+  const diff = Math.round((run - line * upto) * 100) / 100;
+  h += '<div class="label">' + (budget ? mon + '/' + upto + ' までの累計 <b>' + Calc.rm(Math.round(run * 100) / 100) + '</b>。予算どおりのペースより <b style="color:' + col + '">' + Calc.rm(Math.abs(diff)) + (diff > 0 ? ' 多い' : ' 少ない') + '</b>' : mon + '/' + upto + ' までの累計 <b>' + Calc.rm(Math.round(run * 100) / 100) + '</b>') + '</div>';
+  h += '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + mon + '月の支出の累計の折れ線グラフ">' + g + '</svg>';
+  h += '<div class="lg"><span><i style="border-color:' + col + '"></i>使った累計</span>' + (budget ? '<span><i style="border-top-style:dashed;border-color:var(--quiet)"></i>予算 ' + Calc.rm(budget).replace(/\.\d\d$/, '') + ' のペース</span>' : '') + '<span><i class="bx" style="background:var(--quiet);opacity:.4"></i>その日の支出(赤=1日の予算超え)</span></div>';
+  box.innerHTML = h;
+}
+
 // 家で食べたときのお祝い
 function celebrate(title, sub) {
   document.querySelectorAll('.cele').forEach(x => x.remove());
@@ -1345,10 +1404,10 @@ function setTab(t) {
   document.body.classList.toggle('t-in', t === 'in'); document.body.classList.toggle('t-ana', t === 'ana');
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   if (t === 'in') { if (S.selDay) { S.selDay = null; renderCalendar(); } renderList(); }
-  if (t === 'ana') closePad();
+  if (t === 'ana') { closePad(); renderTrend(); }
 }
 
-function render() { renderHero(); renderForm(); renderCalendar(); renderFood(); renderRides(); renderIncome(); renderAdvice(); renderOutlook(); renderFixed(); renderList(); renderStatus(); }
+function render() { renderHero(); renderForm(); renderCalendar(); renderTrend(); renderFood(); renderRides(); renderIncome(); renderAdvice(); renderOutlook(); renderFixed(); renderList(); renderStatus(); }
 
 // ---- 読み込みと送信 ----
 async function load() {
@@ -1500,7 +1559,7 @@ $('calendar').addEventListener('click', e => {
   if (e.target.dataset.close) { S.selDay = null; renderCalendar(); renderList(); return; }
   const b = e.target.closest('button[data-day]'); if (!b) return; S.selDay = S.selDay === b.dataset.day ? null : b.dataset.day; renderCalendar(); renderList();
 });
-let resizeT; addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(renderList, 200); });
+let resizeT; addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => { renderList(); renderTrend(); }, 200); });
 $('tabs').addEventListener('click', e => { const t = e.target.dataset.tab; if (t) setTab(t); });
 $('list').addEventListener('click', e => {
   if (e.target.dataset.all) { S.selDay = null; renderCalendar(); renderList(); return; }
