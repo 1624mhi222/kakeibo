@@ -297,6 +297,13 @@
   .trend h2 { font-size: 15px; margin: 0 0 4px; }
   .trend svg { display: block; width: 100%; height: auto; margin: 6px 0 0; overflow: visible; }
   .trend svg text { font-size: 10px; fill: var(--quiet); font-variant-numeric: tabular-nums; }
+  .trend .tip { background: var(--chip); border-radius: 12px; padding: 9px 12px; margin-top: 10px; }
+  .trend .tip .d { font-weight: 700; font-size: 14px; } .trend .tip .d small { font-weight: 400; color: var(--quiet); font-size: 12px; margin-left: 4px; }
+  .trend .tip .g { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
+  .trend .tip .g span { display: block; font-size: 11.5px; color: var(--quiet); }
+  .trend .tip .g b { font-size: 15px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .trend .tip .bad { color: var(--bad); } .trend .tip .ok { color: var(--accent); }
+  .trend svg { touch-action: pan-y; }
   .trend .lg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--quiet); margin-top: 6px; }
   .trend .lg i { display: inline-block; width: 14px; height: 0; border-top: 2.5px solid; vertical-align: middle; margin-right: 5px; }
   .trend .lg i.bx { height: 9px; width: 9px; border: 0; border-radius: 2px; }
@@ -1368,7 +1375,7 @@ function renderTrend() {
   [1, 5, 10, 15, 20, 25, dim].forEach(d => { g += '<text x="' + x(d).toFixed(1) + '" y="' + (H - 5) + '" text-anchor="middle">' + d + '</text>'; });
   // 日ごとの支出(棒)。1日の予算を超えた日は赤
   const bw = Math.max(pw / dim - 2, 2);
-  for (let d = 1; d <= upto; d++) if (day[d] > 0) g += '<rect x="' + (x(d) - bw / 2).toFixed(1) + '" y="' + y(day[d]).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (y(0) - y(day[d])).toFixed(1) + '" rx="1.5" fill="' + (line && day[d] > line ? 'var(--bad)' : 'var(--quiet)') + '" opacity=".28"><title>' + mon + '/' + d + ' ' + Calc.rm(Math.round(day[d] * 100) / 100) + '</title></rect>';
+  for (let d = 1; d <= upto; d++) if (day[d] > 0) g += '<rect x="' + (x(d) - bw / 2).toFixed(1) + '" y="' + y(day[d]).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (y(0) - y(day[d])).toFixed(1) + '" rx="1.5" fill="' + (line && day[d] > line ? 'var(--bad)' : 'var(--quiet)') + '" opacity=".28"/>';
   // 予算どおりのペース(点線)
   if (budget) g += '<line x1="' + x(0.5).toFixed(1) + '" y1="' + y(0).toFixed(1) + '" x2="' + x(dim).toFixed(1) + '" y2="' + y(budget).toFixed(1) + '" stroke="var(--quiet)" stroke-width="1.5" stroke-dasharray="4 3"/>';
   // 累計(折れ線)
@@ -1377,12 +1384,41 @@ function renderTrend() {
   const pts = cum.map((v, i) => x(i + 1).toFixed(1) + ',' + y(v).toFixed(1));
   g += '<polyline points="' + x(0.5).toFixed(1) + ',' + y(0).toFixed(1) + ' ' + pts.join(' ') + '" fill="none" stroke="' + col + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
   g += '<circle cx="' + x(upto).toFixed(1) + '" cy="' + y(run).toFixed(1) + '" r="3.5" fill="' + col + '"/>';
+  // さわった日の縦線と点(初めは最後の日)
+  g += '<line id="trGuide" y1="' + T + '" y2="' + y(0).toFixed(1) + '" stroke="var(--ink)" stroke-width="1" opacity=".35"/><circle id="trDot" r="4.5" fill="var(--card)" stroke="' + col + '" stroke-width="2.5"/>';
+  g += '<rect x="' + L + '" y="0" width="' + pw + '" height="' + H + '" fill="transparent" style="cursor:pointer"/>';
+  TR = { dim, upto, day, cum, line, mon, y0: S.month, W, L, pw, x, y };
   const diff = Math.round((run - line * upto) * 100) / 100;
   h += '<div class="label">' + (budget ? mon + '/' + upto + ' までの累計 <b>' + Calc.rm(Math.round(run * 100) / 100) + '</b>。予算どおりのペースより <b style="color:' + col + '">' + Calc.rm(Math.abs(diff)) + (diff > 0 ? ' 多い' : ' 少ない') + '</b>' : mon + '/' + upto + ' までの累計 <b>' + Calc.rm(Math.round(run * 100) / 100) + '</b>') + '</div>';
-  h += '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + mon + '月の支出の累計の折れ線グラフ">' + g + '</svg>';
-  h += '<div class="lg"><span><i style="border-color:' + col + '"></i>使った累計</span>' + (budget ? '<span><i style="border-top-style:dashed;border-color:var(--quiet)"></i>予算 ' + Calc.rm(budget).replace(/\.\d\d$/, '') + ' のペース</span>' : '') + '<span><i class="bx" style="background:var(--quiet);opacity:.4"></i>その日の支出(赤=1日の予算超え)</span></div>';
+  h += '<div class="tip" id="trTip"></div><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + mon + '月の支出の累計の折れ線グラフ">' + g + '</svg>';
+  h += '<div class="lg"><span><i style="border-color:' + col + '"></i>使った累計</span>' + (budget ? '<span><i style="border-top-style:dashed;border-color:var(--quiet)"></i>予算 ' + Calc.rm(budget).replace(/\.\d\d$/, '') + ' のペース</span>' : '') + '<span><i class="bx" style="background:var(--quiet);opacity:.4"></i>その日の支出(赤=1日の予算超え)</span><span>グラフをさわると、その日の数字が上に出ます</span></div>';
   box.innerHTML = h;
+  trendPick(upto);
 }
+// グラフをさわった日の数字を、上のカードに項目名つきで出す
+let TR = null;
+function trendPick(d) {
+  if (!TR || !$('trTip')) return;
+  d = Math.min(Math.max(d, 1), TR.upto);
+  const v = TR.day[d], c = TR.cum[d - 1], p = TR.line * d, df = Math.round((c - p) * 100) / 100;
+  const [yy, mm] = TR.y0.split('-').map(Number), wd = '日月火水木金土'[new Date(yy, mm - 1, d).getDay()];
+  const r2 = n => Calc.rm(Math.round(n * 100) / 100);
+  $('trTip').innerHTML = '<div class="d">' + TR.mon + '/' + d + '(' + wd + ')' + (d === TR.upto ? ' <small>いちばん新しい日</small>' : '') + '</div>' +
+    '<div class="g"><div><span>この日に使った</span><b' + (TR.line && v > TR.line ? ' class="bad"' : '') + '>' + r2(v) + '</b></div>' +
+    '<div><span>' + TR.mon + '/1からの合計</span><b>' + r2(c) + '</b></div>' +
+    (TR.line ? '<div><span>予算ペースより</span><b class="' + (df > 0 ? 'bad' : 'ok') + '">' + (df > 0 ? '+' : '−') + r2(Math.abs(df)) + (df > 0 ? ' 多い' : ' 少ない') + '</b></div>' : '') + '</div>';
+  const gx = TR.x(d).toFixed(1);
+  $('trGuide').setAttribute('x1', gx); $('trGuide').setAttribute('x2', gx);
+  $('trDot').setAttribute('cx', gx); $('trDot').setAttribute('cy', TR.y(c).toFixed(1));
+}
+function trendAt(e) {
+  const svg = e.target.closest && e.target.closest('#trend svg');
+  if (!svg || !TR) return;
+  const r = svg.getBoundingClientRect(), vx = (e.clientX - r.left) / r.width * TR.W;
+  trendPick(Math.round((vx - TR.L) / TR.pw * TR.dim + 0.5));
+}
+$('trend').addEventListener('pointermove', trendAt);
+$('trend').addEventListener('pointerdown', trendAt);
 
 // 家で食べたときのお祝い
 function celebrate(title, sub) {
